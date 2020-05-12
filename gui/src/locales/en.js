@@ -13,12 +13,13 @@ export default {
     success: "SUCCESS",
     fail: "FAIL",
     message: "Message",
-    none: "none"
+    none: "none",
+    optional: "optional"
   },
   welcome: {
     title: "Welcome",
-    docker: "V2RayA service is running in Docker. Version: {version}",
-    default: "V2RayA service is running. Version: {version}",
+    docker: "v2rayA service is running in Docker. Version: {version}",
+    default: "v2rayA service is running. Version: {version}",
     newVersion: "Detected new version: {version}",
     messages: [
       "There is no server.",
@@ -71,7 +72,7 @@ export default {
     messages: [
       "Remember your admin account which is importantly used to login.",
       "Account information is stored in local. We never send information to any server.",
-      "Once password was forgot, you could delete the config file and restart V2RayA service to reset."
+      "Once password was forgot, you could delete the config file and restart v2rayA service to reset."
     ]
   },
   login: {
@@ -81,21 +82,22 @@ export default {
   },
   setting: {
     transparentProxy: "Transparent Proxy",
-    pacMode: "PAC Mode",
+    pacMode: "Traffic Splitting Mode of Rule Port",
     preventDnsSpoofing: "Prevent DNS Spoofing",
     mux: "Multiplex",
     autoUpdateSub: "Automatically Update Subscriptions",
     autoUpdateGfwlist: "Automatically Update GFWList",
     preferModeWhenUpdate: "Mode when Upadate Subscriptions and GFWList",
     ipForwardOn: "IP Forward",
+    enhancedModeOn: "Enhanced Mode",
     concurrency: "Concurrency",
     options: {
       global: "Proxy All Traffic",
       direct: "Direct",
-      pac: "PAC Mode",
+      pac: "Depend on Rule Port",
       whitelistCn: "Proxy except CN Sites",
       gfwlist: "Proxy Only GFWList",
-      sameAsPacMode: "The Same as PAC Mode",
+      sameAsPacMode: "The Same as the Rule Port",
       customRouting: "Customized Routing",
       antiDnsHijack: "Prevent DNS Hijack Only",
       forwardDnsRequest: "Prevent DNS Spoofing: Forward DNS Request",
@@ -105,19 +107,20 @@ export default {
       off: "Off",
       updateSubWhenStart: "Update Subscriptions When Service Starts",
       updateGfwlistWhenStart: "Update GFWList When Service Starts",
-      dependTransparentMode: "Depend on Transparent Mode"
+      dependTransparentMode: "Depend on Transparent Proxy",
+      closed: "Off"
     },
     messages: {
       gfwlist:
         "Based on modified time of file which sometimes is after latest version online.",
       transparentProxy:
         "If transparent proxy on, no extra configure needed and all TCP and UDP traffic except from docker will pass through the proxy. Providing proxy service to other computers as the gateway should make option 'IP forward' on.",
-      pacMode:
-        "Here you can set what proxy mode PAC mode is. By default PAC port is 20172 and HTTP protocol.",
+      pacMode: `Here you can set the splitting traffic rule of rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
       preventDnsSpoofing:
-        "By default use DNSPod to prevent DNS hijack(v0.6.3+)." +
+        "If there is a problem with transparent proxy, try setting 'Prevent DNS Spoofing' as 'Off' or turn on 'Enhanced Mode' (v0.7.0.2+)." +
         "★Forward DNS Request: DNS requests will be forwarded by proxy server." +
-        "★DoH(dns-over-https, v2ray-core: 4.22.0+): Stable and fast DoH services are suggested.",
+        "★DoH(dns-over-https, v2ray-core: 4.22.0+): Stable and fast DoH services are suggested." +
+        "★Enhanced Mode(v0.7.0.2+) will replace the method of forwarding dns-query using iptables with DnsPoison method",
       tcpFastOpen:
         "Simplify TCP handshake process to speed up connection establishment. Risk of emphasizing characteristics of packets exists. Support vmess only now.",
       mux:
@@ -134,12 +137,12 @@ export default {
     serviceAddress: "Address of Service",
     portSocks5: "Port of SOCKS5",
     portHttp: "Port of HTTP",
-    portHttpWithPac: "Port of HTTP(with PAC)",
+    portHttpWithPac: "Port of HTTP(with Rule)",
     messages: [
       "Service address default as 0.0.0.0:2017 can be changed by setting environment variable <code>V2RAYA_ADDRESS</code> and command argument<code>--address</code>.",
       "If you start v2raya docker container with port mapping instead of <code>--network host</code>, you can remapping ports in this way.",
       "We can not judge port occupations in docker mode. Confirm ports are free.",
-      "Put zero means to close this port."
+      "Zero means to close this port."
     ]
   },
   customRouting: {
@@ -154,7 +157,7 @@ export default {
     domainFile: "Domain File",
     typeRule: "Type of Rule",
     messages: {
-      0: "V2RayA will recognize all SiteDat file in <b>{V2RayLocationAsset}</b>",
+      0: "v2rayA will recognize all SiteDat file in <b>{V2RayLocationAsset}</b>",
       1: 'To make a SiteDat file by yourself: <a href="https://github.com/ToutyRater/V2Ray-SiteDAT">ToutyRater/V2Ray-SiteDAT</a>',
       2: "Multi-select is supported.",
       noSiteDatFileFound: "No siteDat file found in {V2RayLocationAsset}",
@@ -179,7 +182,7 @@ export default {
     tcpPortWhitelist: "TCP Port Whitelist",
     udpPortWhitelist: "UDP Port Whitelist",
     messages: [
-      "If V2RayA is setup on a server providing service to clients, pay attention:",
+      "If v2rayA is setup on a server providing service to clients, pay attention:",
       "Transparent proxy will force all TCP and UDP traffic to pass through proxy server, where source IP address will be replaced with proxy's. Moreover, if some clients send requests to the IP address of your server that provides service, they will received responses from your proxy's IP address weirdly, which is illegal.",
       "To resolve it, we need to add those service ports to whitelist so that not pass through proxy.For examples, ssh(22)、v2raya({v2rayaPort}).",
       "Obviously, if the server does not provide any service, you can skip configuring.",
@@ -219,32 +222,32 @@ export default {
   },
   version: {
     higherVersionNeeded:
-      "This operation need higher version of V2RayA than {version}",
+      "This operation need higher version of v2rayA than {version}",
     v2rayInvalid: "v2ray-core may not be installed correctly"
   },
-  about: `<p>V2RayA is a web GUI client of V2Ray. Frontend is built with Vue.js and backend is built with golang.</p>
+  about: `<p>v2rayA is a web GUI client of V2Ray. Frontend is built with Vue.js and backend is built with golang.</p>
           <p class="about-small">Default ports:</p>
-          <p class="about-small">2017: V2RayA service port</p>
+          <p class="about-small">2017: v2rayA service port</p>
           <p class="about-small">20170: SOCKS protocol</p>
           <p class="about-small">20171: HTTP protocol</p>
-          <p class="about-small">20172: HTTP protocol with PAC</p>
+          <p class="about-small">20172: HTTP protocol with "Rule of Splitting Traffic"</p>
           <p class="about-small">Other ports：</p>
-          <p class="about-small">12345: tproxy </p>
-          <p class="about-small">12346: ssr relay</p>
+          <p class="about-small">32345: tproxy, needed by transparent proxy </p>
+          <p class="about-small">32346: port of plugins such as trojan, ssr and pingtunnel</p>
           <p>All data is stored in local. If service is running in docker, configure will disappear with related docker volume's removing. Backup data if necessary.
-          <p>Problems found during use can be reported at <a href="https://github.com/mzz2017/V2RayA/issues">issues</a>.</p>`,
+          <p>Problems found during use can be reported at <a href="https://github.com/mzz2017/v2rayA/issues">issues</a>.</p>`,
   axios: {
     messages: {
-      optimizeBackend: "Adjust V2RayA service address？",
+      optimizeBackend: "Adjust v2rayA service address？",
       noBackendFound:
-        "Cannot find V2RayA at {url}. Make sure V2RayA is running at this address.",
+        "Cannot find v2rayA at {url}. Make sure v2rayA is running at this address.",
       cannotCommunicate: [
         "Cannot communicate. If your service is running and ports open correctly, the reason may be that current browser does not allow https sites to access http resources, you can try using Chrome or switching to alternate http site.",
         "Cannot communicate. Firefox does not allow https sites to access http resources, you can try switching to alternate http site."
       ]
     },
     urls: {
-      usage: "https://github.com/mzz2017/V2RayA/wiki/Usage"
+      usage: "https://github.com/mzz2017/v2rayA/wiki/Usage"
     }
   },
   routingA: {

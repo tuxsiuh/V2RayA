@@ -1,14 +1,14 @@
 package service
 
 import (
-	"V2RayA/core/nodeData"
-	"V2RayA/core/vmessInfo"
-	"V2RayA/common"
-	"errors"
 	"github.com/json-iterator/go"
+	"log"
 	"net/url"
 	"regexp"
 	"strings"
+	"v2rayA/common"
+	"v2rayA/core/nodeData"
+	"v2rayA/core/vmessInfo"
 )
 
 /*
@@ -16,7 +16,7 @@ import (
 */
 func ResolveVmessURL(vmess string) (data *nodeData.NodeData, err error) {
 	if len(vmess) < 8 || strings.ToLower(vmess[:8]) != "vmess://" {
-		err = errors.New("this address is not begin with vmess://")
+		err = newError("this address is not begin with vmess://")
 		return
 	}
 	var info vmessInfo.VmessInfo
@@ -34,21 +34,22 @@ func ResolveVmessURL(vmess string) (data *nodeData.NodeData, err error) {
 		s, err = common.Base64StdDecode(s)
 		subMatch := re.FindStringSubmatch(s)
 		if subMatch == nil {
-			err = errors.New("unrecognized vmess address")
+			err = newError("unrecognized vmess address")
 			return
 		}
 		q := u.Query()
 		info = vmessInfo.VmessInfo{
-			ID:   subMatch[1],
-			Add:  subMatch[2],
-			Port: subMatch[3],
-			Ps:   q.Get("remarks"),
-			Host: q.Get("obfsParam"),
-			Path: q.Get("path"),
-			Net:  q.Get("obfs"),
-			Aid:  q.Get("aid"),
-			TLS:  map[string]string{"1": "tls"}[q.Get("tls")],
-			V:    "2",
+			ID:            subMatch[1],
+			Add:           subMatch[2],
+			Port:          subMatch[3],
+			Ps:            q.Get("remarks"),
+			Host:          q.Get("obfsParam"),
+			Path:          q.Get("path"),
+			Net:           q.Get("obfs"),
+			Aid:           q.Get("aid"),
+			TLS:           map[string]string{"1": "tls"}[q.Get("tls")],
+			V:             "2",
+			AllowInsecure: false,
 		}
 		if info.Net == "websocket" {
 			info.Net = "ws"
@@ -67,14 +68,7 @@ func ResolveVmessURL(vmess string) (data *nodeData.NodeData, err error) {
 	if info.Aid == "" {
 		info.Aid = "6"
 	}
-	// 填充模板并处理结果
-	//t, err := v2ray.NewTemplateFromVmessInfo(info)
-	//if err != nil {
-	//	return
-	//}
 	data = new(nodeData.NodeData)
-	//b := t.ToConfigBytes()
-	//data.Config = string(b)
 	data.VmessInfo = info
 	return
 }
@@ -84,12 +78,13 @@ func ResolveVmessURL(vmess string) (data *nodeData.NodeData, err error) {
 */
 func ResolveSSURL(u string) (data *nodeData.NodeData, err error) {
 	if len(u) < 5 || strings.ToLower(u[:5]) != "ss://" {
-		err = errors.New("this address is not begin with ss://")
+		err = newError("this address is not begin with ss://")
 		return
 	}
 	// 该函数尝试对ss://链接进行解析
 	resolveFormat := func(content string) (subMatch []string, ok bool) {
 		// 尝试按ss://method:password@server:port#name格式进行解析
+		content = strings.TrimSuffix(content, "#")
 		re := regexp.MustCompile(`(.+):(.+)@(.+?):(\d+)(#.+)?`)
 		subMatch = re.FindStringSubmatch(content)
 		if len(subMatch) == 0 {
@@ -122,9 +117,12 @@ func ResolveSSURL(u string) (data *nodeData.NodeData, err error) {
 		var e error
 		name, e = common.Base64URLDecode(sp[1])
 		if e != nil {
-			name, _ = common.Base64StdDecode(sp[1])
+			name, e = common.Base64StdDecode(sp[1])
 		}
-		name, _ = url.QueryUnescape(name)
+		_name, e := url.QueryUnescape(name)
+		if e == nil {
+			name = _name
+		}
 	}
 	var (
 		subMatch []string
@@ -143,7 +141,7 @@ func ResolveSSURL(u string) (data *nodeData.NodeData, err error) {
 		subMatch, ok = resolveFormat(content)
 	}
 	if !ok {
-		err = errors.New("unrecognized ss address")
+		err = newError("unrecognized ss address")
 		return
 	}
 	info := vmessInfo.VmessInfo{
@@ -173,7 +171,7 @@ func ResolveSSURL(u string) (data *nodeData.NodeData, err error) {
 */
 func ResolveSSRURL(u string) (data *nodeData.NodeData, err error) {
 	if len(u) < 6 || strings.ToLower(u[:6]) != "ssr://" {
-		err = errors.New("this address is not begin with ssr://")
+		err = newError("this address is not begin with ssr://")
 		return
 	}
 	// 该函数尝试对ssr://链接进行解析
@@ -234,23 +232,85 @@ func ResolveSSRURL(u string) (data *nodeData.NodeData, err error) {
 		info, ok = resolveFormat(content)
 	}
 	if !ok {
-		err = errors.New("unrecognized ssr address")
+		err = newError("unrecognized ssr address")
 		return
 	}
 	// 填充模板并处理结果
 	data = new(nodeData.NodeData)
-	//t, err := v2ray.NewTemplateFromVmessInfo(info)
-	//if err == nil {
-	//	b := t.ToConfigBytes()
-	//	data.Config = string(b)
-	//}
 	data.VmessInfo = info
 	return
 }
+
+func ResolveTrojanURL(u string) (data *nodeData.NodeData, err error) {
+	//	trojan://password@server:port#escape(remarks)
+	if !strings.HasPrefix(u, "trojan://") {
+		err = newError("this address is not begin with trojan://")
+		return
+	}
+	t, err := url.Parse(u)
+	if err != nil {
+		err = newError("invalid trojan format")
+		return
+	}
+	allowInsecure := t.Query().Get("allowInsecure")
+	data = new(nodeData.NodeData)
+	data.VmessInfo = vmessInfo.VmessInfo{
+		Ps:            t.Fragment,
+		Add:           t.Hostname(),
+		Port:          t.Port(),
+		ID:            t.User.String(),
+		Host:          t.Query().Get("peer"),
+		AllowInsecure: allowInsecure == "1" || allowInsecure == "true",
+		Protocol:      "trojan",
+	}
+	log.Println(data.VmessInfo)
+	return
+}
+func ResolvePingTunnelURL(u string) (data *nodeData.NodeData, err error) {
+	if len(u) < 13 || strings.ToLower(u[:13]) != "pingtunnel://" {
+		err = newError("this address is not begin with pingtunnel://")
+		return
+	}
+	u = u[13:]
+	u, err = common.Base64StdDecode(u)
+	if err != nil {
+		log.Println(u)
+		err = newError(err)
+		return
+	}
+	arr := strings.Split(u, "#")
+	var ps string
+	if len(arr) == 2 {
+		ps, _ = url.QueryUnescape(arr[1])
+	}
+	u = arr[0]
+	re := regexp.MustCompile(`(.+):(.+)`)
+	subMatch := re.FindStringSubmatch(u)
+	if len(subMatch) < 3 {
+		return nil, newError("wrong format of pingtunnel")
+	}
+	data = new(nodeData.NodeData)
+	passwd, err := common.Base64URLDecode(subMatch[2])
+	if err != nil {
+		log.Println(subMatch[2])
+		err = newError(err)
+		return
+	}
+	data.VmessInfo = vmessInfo.VmessInfo{
+		Ps:       ps,
+		Add:      subMatch[1],
+		ID:       passwd,
+		Protocol: "pingtunnel",
+	}
+	return
+}
+
+var ErrorEmptyAddress = newError("ResolveURL error: empty address")
+
 func ResolveURL(u string) (n *nodeData.NodeData, err error) {
 	u = strings.TrimSpace(u)
 	if len(u) <= 0 {
-		err = errors.New("ResolveURL error: empty address")
+		err = ErrorEmptyAddress
 		return
 	}
 	if strings.HasPrefix(u, "vmess://") {
@@ -259,8 +319,12 @@ func ResolveURL(u string) (n *nodeData.NodeData, err error) {
 		n, err = ResolveSSURL(u)
 	} else if strings.HasPrefix(u, "ssr://") {
 		n, err = ResolveSSRURL(u)
+	} else if strings.HasPrefix(u, "pingtunnel://") {
+		n, err = ResolvePingTunnelURL(u)
+	} else if strings.HasPrefix(u, "trojan://") {
+		n, err = ResolveTrojanURL(u)
 	} else {
-		err = errors.New("not supported protocol. we only support ss, ssr and vmess now: " + u)
+		err = newError("not supported protocol. we only support ss, ssr and vmess now: " + u)
 		return
 	}
 	if err != nil {

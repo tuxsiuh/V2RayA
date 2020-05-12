@@ -1,15 +1,15 @@
 ---
-name: V2RayA程序问题
-about: "提交一个 V2RayA 的程序问题报告。"
+name: v2rayA程序问题
+about: "提交一个 v2rayA 的程序问题报告。"
 labels: bug
 
 ---
 
 ### 版本、安装方式、系统
 
-1. 你在使用什么版本的V2RayA
+1. 你在使用什么版本的v2rayA
 
-2. 你通过什么方式安装V2RayA
+2. 你通过什么方式安装v2rayA
 
 3. 你所使用的操作系统、CPU架构
 
@@ -22,11 +22,11 @@ labels: bug
 <!-- 在下方描述如何复现问题 -->
 
 
-### V2RayA运行日志：
+### v2rayA运行日志：
 
  ```bash
  # daemon mode
- journalctl -u v2raya | tail -n 50
+ journalctl -u v2raya | tail -n 100
  
  # docker mode
  docker logs v2raya_backend

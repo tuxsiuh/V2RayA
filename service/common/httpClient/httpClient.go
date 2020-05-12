@@ -1,14 +1,14 @@
 package httpClient
 
 import (
-	"V2RayA/extra/proxyWithHttp"
-	"V2RayA/core/v2ray"
-	"V2RayA/persistence/configure"
-	"V2RayA/common"
 	"net/http"
 	"net/url"
 	"os/exec"
 	"strings"
+	"v2rayA/common"
+	"v2rayA/core/v2ray"
+	"v2rayA/extra/proxyWithHttp"
+	"v2rayA/persistence/configure"
 )
 
 func GetHttpClientWithProxy(proxyURL string) (client *http.Client, err error) {
@@ -20,13 +20,14 @@ func GetHttpClientWithProxy(proxyURL string) (client *http.Client, err error) {
 	if err != nil {
 		return
 	}
-	httpTransport := &http.Transport{}
-	httpTransport.Dial = dialer.Dial
+	httpTransport := &http.Transport{
+		Dial: dialer.Dial,
+	}
 	client = &http.Client{Transport: httpTransport}
 	return
 }
 
-func GetHttpClientWithV2RayAProxy() (client *http.Client, err error) {
+func GetHttpClientWithv2rayAProxy() (client *http.Client, err error) {
 	host := "127.0.0.1"
 	//是否在docker环境
 	if common.IsInDocker() {
@@ -41,7 +42,7 @@ func GetHttpClientWithV2RayAProxy() (client *http.Client, err error) {
 	return GetHttpClientWithProxy("socks5://" + host + ":20170")
 }
 
-func GetHttpClientWithV2RayAPac() (client *http.Client, err error) {
+func GetHttpClientWithv2rayAPac() (client *http.Client, err error) {
 	host := "127.0.0.1"
 	//是否在docker环境
 	if common.IsInDocker() {
@@ -63,9 +64,9 @@ func GetHttpClientAutomatically() (c *http.Client, err error) {
 	setting := configure.GetSettingNotNil()
 	switch setting.ProxyModeWhenSubscribe {
 	case configure.ProxyModePac:
-		c, err = GetHttpClientWithV2RayAPac()
+		c, err = GetHttpClientWithv2rayAPac()
 	case configure.ProxyModeProxy:
-		c, err = GetHttpClientWithV2RayAProxy()
+		c, err = GetHttpClientWithv2rayAProxy()
 	default:
 		c = http.DefaultClient
 	}

@@ -3,7 +3,7 @@
     <b-navbar ref="navs" fixed-top shadow type="is-light">
       <template slot="brand">
         <b-navbar-item href="/">
-          <img src="./assets/logo2.png" alt="V2RayA" class="logo no-select" />
+          <img src="./assets/logo2.png" alt="v2rayA" class="logo no-select" />
         </b-navbar-item>
       </template>
       <template slot="start">
@@ -46,12 +46,26 @@
               style="position: relative; top: 1px; left:2px"
             ></i>
           </a>
-
           <b-dropdown-item
             custom
             aria-role="menuitem"
             v-html="$t('common.loggedAs', { username })"
           >
+          </b-dropdown-item>
+          <b-dropdown-item
+            custom
+            aria-role="menuitem"
+            class="is-flex"
+            style="box-sizing: content-box;height: 16px;width: 60px;justify-content: space-between;"
+          >
+            <img
+              v-for="lang of langs"
+              :key="lang.flag"
+              :src="`/img/flags/flag_${lang.flag}.svg`"
+              :alt="lang.alt"
+              style="height:100%;flex-shrink: 0;cursor: pointer"
+              @click="handleClickLang(lang.flag)"
+            />
           </b-dropdown-item>
           <hr class="dropdown-divider" />
           <b-dropdown-item
@@ -86,7 +100,7 @@
 
 <script>
 import ModalSetting from "@/components/modalSetting";
-import node from "@/components/node";
+import node from "@/node";
 import { Base64 } from "js-base64";
 import ModalCustomAddress from "./components/modalCustomPorts";
 import { parseURL } from "./assets/js/utils";
@@ -108,7 +122,11 @@ export default {
         connectedServer: null,
         lastConnectedServer: null
       },
-      showCustomPorts: false
+      showCustomPorts: false,
+      langs: [
+        { flag: "zh", alt: "简体中文" },
+        { flag: "en", alt: "English" }
+      ]
     };
   },
   computed: {
@@ -124,12 +142,8 @@ export default {
   created() {
     console.log("app created");
     let ba = localStorage.getItem("backendAddress");
-    if (!ba) {
-      ba = "http://localhost:2017";
-      localStorage.setItem("backendAddress", ba);
-    }
     let u = parseURL(ba);
-    document.title = `V2RayA - ${u.host}:${u.port}`;
+    document.title = `v2rayA - ${u.host}:${u.port}`;
     this.$axios({
       url: apiRoot + "/version"
     }).then(res => {
@@ -171,6 +185,10 @@ export default {
     });
   },
   methods: {
+    handleClickLang(lang) {
+      localStorage["_lang"] = lang;
+      location.reload();
+    },
     handleOnStatusMouseEnter() {
       if (this.runningState.running === this.$t("common.isRunning")) {
         this.coverStatusText = "　" + this.$t("v2ray.stop") + "　";
@@ -201,16 +219,16 @@ export default {
         content: `
 <div class="modal-card" style="margin:auto">
                     <header class="modal-card-head">
-                        <p class="modal-card-title">mzz2017 / V2RayA</p>
+                        <p class="modal-card-title">mzz2017 / v2rayA</p>
                     </header>
                     <section class="modal-card-body lazy">
                         ${this.$t(`about`)}
                     </section>
                     <footer class="modal-card-foot">
-                        <a class="is-link" href="https://github.com/mzz2017/V2RayA" target="_blank">
-                          <img class="leave-right" src="https://img.shields.io/github/stars/mzz2017/V2RayA.svg?style=social" alt="stars">
-                          <img class="leave-right" src="https://img.shields.io/github/forks/mzz2017/V2RayA.svg?style=social" alt="forks">
-                          <img class="leave-right" src="https://img.shields.io/github/watchers/mzz2017/V2RayA.svg?style=social" alt="watchers">
+                        <a class="is-link" href="https://github.com/mzz2017/v2rayA" target="_blank">
+                          <img class="leave-right" src="https://img.shields.io/github/stars/mzz2017/v2rayA.svg?style=social" alt="stars">
+                          <img class="leave-right" src="https://img.shields.io/github/forks/mzz2017/v2rayA.svg?style=social" alt="forks">
+                          <img class="leave-right" src="https://img.shields.io/github/watchers/mzz2017/v2rayA.svg?style=social" alt="watchers">
                         </a>
                     </footer>
                 </div>
@@ -243,7 +261,7 @@ export default {
               });
             }
           }),
-          5 * 1000,
+          3 * 1000,
           cancel
         );
       } else if (this.runningState.running === this.$t("common.isRunning")) {
@@ -278,7 +296,6 @@ export default {
 </script>
 
 <style lang="scss">
-//TODO: 缓冲css到本地
 @import "assets/iconfont/fonts/font.css";
 @import "assets/scss/reset.scss";
 </style>

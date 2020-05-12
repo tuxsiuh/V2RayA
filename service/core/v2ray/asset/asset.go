@@ -1,11 +1,7 @@
 package asset
 
 import (
-	"V2RayA/common/files"
-	"V2RayA/core/dnsPoison"
-	"V2RayA/global"
-	"errors"
-	"github.com/gogo/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/muhammadmuzzammil1998/jsonc"
 	"io/ioutil"
 	"log"
@@ -18,6 +14,9 @@ import (
 	"time"
 	v2router "v2ray.com/core/app/router"
 	"v2ray.com/core/common/strmatcher"
+	"v2rayA/common/files"
+	"v2rayA/core/dnsPoison"
+	"v2rayA/global"
 )
 
 var v2rayLocationAsset *string
@@ -38,14 +37,16 @@ func GetV2rayLocationAsset() (s string) {
 	}
 	var err error
 	if s == "" {
-		//默认为v2ray运行目录
+		//by default, v2ray working directory
 		s, err = GetV2rayWorkingDir()
 	}
 	if err != nil {
-		//再不行只能盲猜一个
+		//fine, guess one
 		s = "/etc/v2ray"
+	} else {
+		//save the result if not by guess
+		v2rayLocationAsset = &s
 	}
-	v2rayLocationAsset = &s
 	return
 }
 
@@ -56,7 +57,7 @@ func GetV2rayWorkingDir() (string, error) {
 		p, _ := GetV2rayServiceFilePath()
 		out, err := exec.Command("sh", "-c", "cat "+p+"|grep ExecStart=").CombinedOutput()
 		if err != nil {
-			return "", errors.New(err.Error() + string(out))
+			return "", newError(string(out)).Base(err)
 		}
 		arr := strings.SplitN(strings.TrimSpace(string(out)), " ", 2)
 		return path.Dir(strings.TrimPrefix(arr[0], "ExecStart=")), nil
@@ -67,7 +68,7 @@ func GetV2rayWorkingDir() (string, error) {
 			return path.Dir(strings.TrimSpace(string(out))), nil
 		}
 	}
-	return "", errors.New("not found")
+	return "", newError("not found")
 }
 
 func GetV2ctlDir() (string, error) {
@@ -81,7 +82,7 @@ func GetV2ctlDir() (string, error) {
 	}
 	out, err := exec.Command("sh", "-c", "which v2ctl").Output()
 	if err != nil {
-		err = errors.New(err.Error() + string(out))
+		err = newError(string(out)).Base(err)
 		return "", err
 	}
 	return path.Dir(strings.TrimSpace(string(out))), nil
@@ -169,15 +170,15 @@ func GetWhitelistCn(externIps []*v2router.CIDR, externDomains []*v2router.Domain
 	whitelistCn.Lock()
 	defer whitelistCn.Unlock()
 	dir := GetV2rayLocationAsset()
-	b, err := ioutil.ReadFile(path.Join(dir, "geosite.dat"))
-	if err != nil {
-		return nil, nil, errors.New("GetWhitelistCn: " + err.Error())
-	}
 	if whitelistCn.siteList == nil {
 		var siteList v2router.GeoSiteList
+		b, err := ioutil.ReadFile(path.Join(dir, "geosite.dat"))
+		if err != nil {
+			return nil, nil, newError("GetWhitelistCn").Base(err)
+		}
 		err = proto.Unmarshal(b, &siteList)
 		if err != nil {
-			return nil, nil, errors.New("GetWhitelistCn: " + err.Error())
+			return nil, nil, newError("GetWhitelistCn").Base(err)
 		}
 		whitelistCn.siteList = &siteList
 	}
@@ -211,15 +212,15 @@ func GetWhitelistCn(externIps []*v2router.CIDR, externDomains []*v2router.Domain
 	wlDomains.Add(domainMatcher)
 	wlDomains.Add(fullMatcher)
 
-	b, err = ioutil.ReadFile(path.Join(dir, "geoip.dat"))
-	if err != nil {
-		return nil, nil, errors.New("GetWhitelistCn: " + err.Error())
-	}
 	if whitelistCn.ipList == nil {
 		var ipList v2router.GeoIPList
+		b, err := ioutil.ReadFile(path.Join(dir, "geoip.dat"))
+		if err != nil {
+			return nil, nil, newError("GetWhitelistCn").Base(err)
+		}
 		err = proto.Unmarshal(b, &ipList)
 		if err != nil {
-			return nil, nil, errors.New("GetWhitelistCn: " + err.Error())
+			return nil, nil, newError("GetWhitelistCn").Base(err)
 		}
 		whitelistCn.ipList = &ipList
 	}
@@ -240,7 +241,7 @@ func GetV2rayServiceFilePath() (path string, err error) {
 	if global.ServiceControlMode == global.SystemctlMode {
 		out, err = exec.Command("sh", "-c", "systemctl status v2ray|grep /v2ray.service").CombinedOutput()
 		if err != nil {
-			err = errors.New(strings.TrimSpace(string(out)))
+			err = newError(strings.TrimSpace(string(out)))
 			if !strings.Contains(string(out), "not be found") {
 				path = `/usr/lib/systemd/system/v2ray.service`
 				return
@@ -254,11 +255,11 @@ func GetV2rayServiceFilePath() (path string, err error) {
 				return
 			}
 			if err != nil {
-				err = errors.New(strings.TrimSpace(string(out)))
+				err = newError(strings.TrimSpace(string(out)))
 			}
 		}
 	} else {
-		err = errors.New("commands systemctl and service not found")
+		err = newError("commands systemctl and service not found")
 		return
 	}
 	if err != nil {
@@ -268,7 +269,7 @@ func GetV2rayServiceFilePath() (path string, err error) {
 	l := strings.Index(sout, "/")
 	r := strings.Index(sout, "/v2ray.service")
 	if l < 0 || r < 0 {
-		err = errors.New("fail: getV2rayServiceFilePath")
+		err = newError("fail: getV2rayServiceFilePath")
 		return
 	}
 	path = sout[l : r+len("/v2ray.service")]

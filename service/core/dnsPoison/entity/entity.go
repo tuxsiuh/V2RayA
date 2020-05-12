@@ -1,10 +1,9 @@
 package entity
 
 import (
-	"V2RayA/core/dnsPoison"
-	"V2RayA/core/v2ray/asset"
-	"V2RayA/common/netTools"
-	"errors"
+	"v2rayA/common/netTools"
+	"v2rayA/core/dnsPoison"
+	"v2rayA/core/v2ray/asset"
 	"log"
 	"sync"
 	"time"
@@ -55,7 +54,7 @@ func SetupDnsPoisonWithExtraInfo(info *ExtraInfo) {
 func StartDNSPoison(externWhiteDnsServers []*router.CIDR, externWhiteDomains []*router.Domain) (err error) {
 	defer func() {
 		if err != nil {
-			err = errors.New("StartDNSPoison: " + err.Error())
+			err = newError("StartDNSPoison").Base(err)
 		}
 	}()
 	mutex.Lock()
@@ -65,7 +64,7 @@ func StartDNSPoison(externWhiteDnsServers []*router.CIDR, externWhiteDomains []*
 			//done has closed
 		default:
 			mutex.Unlock()
-			return errors.New("DNSPoison is running")
+			return newError("DNSPoison is running")
 		}
 	}
 	done = make(chan interface{})
@@ -108,6 +107,7 @@ func StartDNSPoison(externWhiteDnsServers []*router.CIDR, externWhiteDomains []*
 					return
 				}
 				//准备白名单
+				log.Println("DnsPoison: preparing whitelist")
 				_, wlDms, err := asset.GetWhitelistCn(nil, whiteDomains)
 				if err != nil {
 					log.Println("StartDNSPoisonConroutine:", err)
@@ -137,7 +137,7 @@ func StartDNSPoison(externWhiteDnsServers []*router.CIDR, externWhiteDomains []*
 				poison.Clear()
 				break out
 			default:
-				time.Sleep(5 * time.Second)
+				time.Sleep(2 * time.Second)
 			}
 		}
 	}(poison)
@@ -150,7 +150,7 @@ func StopDNSPoison() {
 	if done != nil {
 		select {
 		case <-done:
-			//done has closed
+			// channel 'done' has been closed
 		default:
 			close(done)
 		}

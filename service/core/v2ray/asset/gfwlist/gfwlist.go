@@ -1,14 +1,13 @@
 package gfwlist
 
 import (
-	"V2RayA/extra/gopeed"
-	"V2RayA/core/v2ray"
-	"V2RayA/core/v2ray/asset"
-	"V2RayA/persistence/configure"
-	"V2RayA/common/files"
-	"V2RayA/common/httpClient"
+	"v2rayA/common/files"
+	"v2rayA/common/httpClient"
+	"v2rayA/core/v2ray"
+	"v2rayA/core/v2ray/asset"
+	"v2rayA/extra/gopeed"
+	"v2rayA/persistence/configure"
 	"fmt"
-	"github.com/pkg/errors"
 	"github.com/tidwall/gjson"
 	"io/ioutil"
 	"log"
@@ -34,7 +33,7 @@ func GetRemoteGFWListUpdateTime(c *http.Client) (gfwlist GFWList, err error) {
 	}
 	resp, err := httpClient.HttpGetUsingSpecificClient(c, "https://api.github.com/repos/mzz2017/dist-v2ray-rules-dat/tags")
 	if err != nil {
-		err = errors.New("fail in get latest version of GFWList: " + err.Error())
+		err = newError("fail in get latest version of GFWList").Base(err)
 		return
 	}
 	b, _ := ioutil.ReadAll(resp.Body)
@@ -42,18 +41,18 @@ func GetRemoteGFWListUpdateTime(c *http.Client) (gfwlist GFWList, err error) {
 	tag := gjson.GetBytes(b, "0.name").Str
 	u := gjson.GetBytes(b, "0.commit.url").Str
 	if tag == "" || u == "" {
-		err = errors.New("fail in get latest version of GFWList: fail in getting latest tag")
+		err = newError("fail in get latest version of GFWList: fail in getting latest tag")
 		return
 	}
 	resp, err = httpClient.HttpGetUsingSpecificClient(c, u)
 	if err != nil {
-		err = errors.New("fail in get latest version of GFWList: " + err.Error())
+		err = newError("fail in get latest version of GFWList").Base(err)
 		return
 	}
 	b, _ = ioutil.ReadAll(resp.Body)
 	t := gjson.GetBytes(b, "commit.committer.date").Time()
 	if t.IsZero() {
-		err = errors.New("fail in get latest version of GFWList: fail in getting commit date of latest tag")
+		err = newError("fail in get latest version of GFWList: fail in getting commit date of latest tag")
 		return
 	}
 	g.Tag = tag
@@ -81,6 +80,13 @@ func IsUpdate() (update bool, remoteTime time.Time, err error) {
 		return
 	}
 	return
+}
+
+func LoyalsoldierSiteDatExists() bool {
+	if info, err := os.Stat(asset.GetV2rayLocationAsset() + "/LoyalsoldierSite.dat"); err == nil && !info.IsDir() {
+		return true
+	}
+	return false
 }
 
 func UpdateLocalGFWList() (localGFWListVersionAfterUpdate string, err error) {
@@ -122,7 +128,7 @@ func CheckAndUpdateGFWList() (localGFWListVersionAfterUpdate string, err error) 
 		return
 	}
 	if update {
-		return "", errors.New(
+		return "", newError(
 			"latest version is " + tRemote.Local().Format("2006-01-02") + ". GFWList is up to date",
 		)
 	}

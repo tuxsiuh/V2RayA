@@ -7,7 +7,7 @@ labels: bug
 
 ### Version, approach of installation, operating system
 
-1. What version of V2RayA are you using?
+1. What version of v2rayA are you using?
 
 2. What approach of installation do you install V2rayA?
 
@@ -26,7 +26,7 @@ labels: bug
 
  ```bash
  # daemon mode
- journalctl -u v2raya | tail -n 50
+ journalctl -u v2raya | tail -n 100
  
  # docker mode
  docker logs v2raya_backend

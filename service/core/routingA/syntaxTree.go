@@ -1,14 +1,13 @@
 package routingA
 
 import (
-	"V2RayA/global"
-	"V2RayA/common"
-	"errors"
+	"v2rayA/common"
+	"v2rayA/global"
+	"v2ray.com/core/common/errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
-	"v2ray.com/core/common/buf"
 )
 
 func toSym(r rune) rune {
@@ -134,9 +133,9 @@ func postHandleMsg(msg string, str []rune, i int) string {
 
 //LR(1)文法
 func generateSyntaxTree(program string) (S symbol, err error) {
-	logsBuf := buf.New()
+	var logsBuf strings.Builder
 	defer func() {
-		if err != nil && global.Version != "debug" {
+		if err != nil && global.Version == "debug" {
 			err = errors.New(logsBuf.String() + err.Error())
 		}
 	}()

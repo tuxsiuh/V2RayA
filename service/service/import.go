@@ -1,17 +1,22 @@
 package service
 
 import (
-	"V2RayA/core/nodeData"
-	"V2RayA/core/touch"
-	"V2RayA/core/v2ray"
-	"V2RayA/persistence/configure"
-	"V2RayA/common/httpClient"
-	"errors"
+	"v2rayA/common/httpClient"
+	"v2rayA/core/nodeData"
+	"v2rayA/core/touch"
+	"v2rayA/core/v2ray"
+	"v2rayA/persistence/configure"
 	"strings"
+	"time"
 )
 
 func Import(url string, which *configure.Which) (err error) {
-	if strings.HasPrefix(url, "vmess://") || strings.HasPrefix(url, "ss://") || strings.HasPrefix(url, "ssr://") {
+	url = strings.TrimSpace(url)
+	if strings.HasPrefix(url, "vmess://") ||
+		strings.HasPrefix(url, "ss://") ||
+		strings.HasPrefix(url, "ssr://") ||
+		strings.HasPrefix(url, "pingtunnel://") ||
+		strings.HasPrefix(url, "trojan://") {
 		var n *nodeData.NodeData
 		n, err = ResolveURL(url)
 		if err != nil {
@@ -21,7 +26,7 @@ func Import(url string, which *configure.Which) (err error) {
 			//修改
 			ind := which.ID - 1
 			if which.TYPE != configure.ServerType || ind < 0 || ind >= configure.GetLenServers() {
-				return errors.New("bad request")
+				return newError("bad request")
 			}
 			var sr *configure.ServerRaw
 			sr, err = which.LocateServer()
@@ -46,11 +51,12 @@ func Import(url string, which *configure.Which) (err error) {
 		}
 		c, err := httpClient.GetHttpClientAutomatically()
 		if err != nil {
-			return errors.New(err.Error())
+			return err
 		}
+		c.Timeout = 90 * time.Second
 		infos, err := ResolveSubscriptionWithClient(url, c)
 		if err != nil {
-			return errors.New("fail in resolving subscription address" + err.Error())
+			return newError("fail in resolving subscription address").Base(err)
 		}
 		//后端NodeData转前端TouchServerRaw压入TouchRaw.Subscriptions.Servers
 		servers := make([]configure.ServerRaw, len(infos))
@@ -58,9 +64,9 @@ func Import(url string, which *configure.Which) (err error) {
 			servers[i] = *v.ToServerRaw()
 		}
 		//去重
-		unique := make(map[configure.ServerRaw]struct{})
+		unique := make(map[configure.ServerRaw]interface{})
 		for _, s := range servers {
-			unique[s] = struct{}{}
+			unique[s] = nil
 		}
 		uniqueServers := make([]configure.ServerRaw, 0)
 		for _, s := range servers {

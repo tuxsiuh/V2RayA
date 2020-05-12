@@ -13,12 +13,13 @@ export default {
     success: "成功",
     fail: "失败",
     message: "提示",
-    none: "无"
+    none: "无",
+    optional: "可选"
   },
   welcome: {
     title: "初来乍到，请多关照",
-    docker: "V2RayA服务端正在运行于Docker环境中，Version: {version}",
-    default: "V2RayA服务端正在运行，Version: {version}",
+    docker: "v2rayA服务端正在运行于Docker环境中，Version: {version}",
+    default: "v2rayA服务端正在运行，Version: {version}",
     newVersion: "检测到新版本: {version}",
     messages: [
       "我们发现你还没有创建或导入任何节点、订阅。",
@@ -81,21 +82,22 @@ export default {
   },
   setting: {
     transparentProxy: "全局透明代理",
-    pacMode: "PAC模式",
+    pacMode: "规则端口的分流模式",
     preventDnsSpoofing: "防止DNS污染",
     mux: "多路复用",
     autoUpdateSub: "自动更新订阅",
     autoUpdateGfwlist: "自动更新GFWList",
     preferModeWhenUpdate: "解析订阅链接/更新时优先使用",
     ipForwardOn: "开启IP转发",
+    enhancedModeOn: "开启增强模式",
     concurrency: "最大并发数",
     options: {
       global: "代理所有流量",
       direct: "直连模式",
-      pac: "PAC模式",
+      pac: "跟随规则端口",
       whitelistCn: "大陆白名单",
       gfwlist: "GFWList",
-      sameAsPacMode: "与PAC模式一致",
+      sameAsPacMode: "与规则端口所选模式一致",
       customRouting: "自定义路由规则",
       antiDnsHijack: "仅防止DNS劫持",
       forwardDnsRequest: "防止DNS污染：转发DNS请求",
@@ -105,18 +107,20 @@ export default {
       off: "关闭",
       updateSubWhenStart: "服务端启动时更新订阅",
       updateGfwlistWhenStart: "服务端启动时更新GFWList",
-      dependTransparentMode: "跟随全局透明代理"
+      dependTransparentMode: "跟随全局透明代理",
+      closed: "关闭"
     },
     messages: {
       gfwlist: "该时间是指本地文件最后修改时间，因此可能会领先最新版本",
       transparentProxy:
         "全局代理开启后，无需经过额外设置，任何TCP、UDP流量均会经过V2Ray。另外，如需作为网关使得连接本机的其他主机也享受代理，请勾选“开启IP转发”。注：本机docker容器不会走代理。",
       pacMode:
-        "该选项设置PAC端口所使用的路由模式。默认情况下PAC端口为20172，HTTP协议。",
+        "该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。",
       preventDnsSpoofing:
-        "默认使用DNSPod防止DNS劫持(v0.6.3+)。" +
+        "如果透明代理出现问题，可尝试将'防止DNS污染'选为'关闭'，或打开增强模式(v0.7.0.2+)。" +
         "★转发DNS查询: 通过代理服务器转发DNS请求。" +
-        "★DoH(v2ray-core: 4.22.0+): DNS over HTTPS，建议选择较快且稳定的DoH服务提供商。",
+        "★DoH(v2ray-core: 4.22.0+): DNS over HTTPS，建议选择较快且稳定的DoH服务提供商。" +
+        "★增强模式(v0.7.0.2+)会取代通过iptables转发dns请求的方式，转而使用DnsPoison方式",
       tcpFastOpen:
         "简化TCP握手流程以加速建立连接，可能会增加封包的特征。当前仅支持vmess节点。",
       mux:
@@ -132,7 +136,7 @@ export default {
     serviceAddress: "服务端地址",
     portSocks5: "socks5端口",
     portHttp: "http端口",
-    portHttpWithPac: "http端口(PAC模式)",
+    portHttpWithPac: "http端口(带分流规则)",
     messages: [
       "如需修改后端运行地址(默认0.0.0.0:2017)，可添加环境变量<code>V2RAYA_ADDRESS</code>或添加启动参数<code>--address</code>。",
       "docker模式下如果未使用<code>--privileged --network host</code>参数启动容器，可通过修改端口映射修改socks5、http端口。",
@@ -177,7 +181,7 @@ export default {
     tcpPortWhitelist: "TCP端口白名单",
     udpPortWhitelist: "UDP端口白名单",
     messages: [
-      "如果你将V2RayA架设在对外提供服务的服务器上，那么你需要注意：",
+      "如果你将v2rayA架设在对外提供服务的服务器上，那么你需要注意：",
       "全局透明代理会使得所有TCP、UDP流量走代理，通过走代理的流量其源IP地址会被替换为代理服务器的IP地址，那么如果客户请求你的服务器IP地址，他却将得到从你代理服务器IP发出的回答，该回答在客户看来无疑是不合法的，从而导致服务被拒绝。",
       "因此，需要将服务器提供的对外服务端口包含在白名单中，使其不走代理。如ssh(22)、v2raya({v2rayaPort})。",
       "如不对外提供服务或仅对局域网内主机提供服务，则可不设置白名单。",
@@ -211,24 +215,24 @@ export default {
     message: "时延测试往往需要花费较长时间，请耐心等待"
   },
   version: {
-    higherVersionNeeded: "该操作需要V2RayA的版本高于{version}",
+    higherVersionNeeded: "该操作需要v2rayA的版本高于{version}",
     v2rayInvalid: "检测到v2ray-core可能未正确安装，请检查"
   },
-  about: `<p>V2RayA是V2Ray的一个Web客户端，前端使用Vue.js构建，后端使用Golang构建。</p>
+  about: `<p>v2rayA是V2Ray的一个Web客户端，前端使用Vue.js构建，后端使用Golang构建。</p>
           <p class="about-small">默认端口：</p>
-          <p class="about-small">2017: V2RayA后端端口</p>
+          <p class="about-small">2017: v2rayA后端端口</p>
           <p class="about-small">20170: SOCKS协议</p>
           <p class="about-small">20171: HTTP协议</p>
-          <p class="about-small">20172: 带PAC的HTTP协议</p>
+          <p class="about-small">20172: 带分流规则的HTTP协议</p>
           <p class="about-small">其他端口：</p>
-          <p class="about-small">12345: tproxy </p>
-          <p class="about-small">12346: ssr relay</p>
+          <p class="about-small">32345: tproxy，透明代理所需 </p>
+          <p class="about-small">32346: 插件协议端口，如trojan、ssr和pingtunnel</p>
           <p>应用不会将任何用户数据保存在云端，所有用户数据存放在用户本地配置文件中。若服务端运行于docker，则当相应 docker volume 被清除时配置也将随之消失，请做好备份。
-          <p>在使用中如果发现任何问题，欢迎<a href="https://github.com/mzz2017/V2RayA/issues">提出issue</a>。</p>`,
+          <p>在使用中如果发现任何问题，欢迎<a href="https://github.com/mzz2017/v2rayA/issues">提出issue</a>。</p>`,
   axios: {
     messages: {
       optimizeBackend: "您是否需要调整服务端地址？",
-      noBackendFound: "未在 {url} 检测到V2RayA服务端，请确定V2RayA正常运行",
+      noBackendFound: "未在 {url} 检测到v2rayA服务端，请确定v2rayA正常运行",
       cannotCommunicate: [
         "无法通信。如果您的服务端已正常运行，且端口正常开放，原因可能是当前浏览器不允许https站点访问http资源，您可以尝试切换为http备用站点。",
         "无法通信。火狐浏览器不允许https站点访问http资源，您可以换用Chrome浏览器或切换为http备用站点。"
@@ -236,7 +240,7 @@ export default {
     },
     urls: {
       usage:
-        "https://github.com/mzz2017/V2RayA/wiki/%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95"
+        "https://github.com/mzz2017/v2rayA/wiki/%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95"
     }
   },
   routingA: {

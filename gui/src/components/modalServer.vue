@@ -90,12 +90,12 @@
             label-position="on-border"
           >
             <b-select v-model="vmess.type" expanded>
-              <option value="none">{{
-                $t("configureServer.noObfuscation")
-              }}</option>
-              <option value="http">{{
-                $t("configureServer.httpObfuscation")
-              }}</option>
+              <option value="none"
+                >{{ $t("configureServer.noObfuscation") }}
+              </option>
+              <option value="http"
+                >{{ $t("configureServer.httpObfuscation") }}
+              </option>
             </b-select>
           </b-field>
           <b-field
@@ -104,26 +104,28 @@
             label-position="on-border"
           >
             <b-select v-model="vmess.type" expanded>
-              <option value="none">{{
-                $t("configureServer.noObfuscation")
-              }}</option>
-              <option value="srtp">{{
-                $t("configureServer.srtpObfuscation")
-              }}</option>
-              <option value="utp">{{
-                $t("configureServer.utpObfuscation")
-              }}</option>
-              <option value="wechat-video">{{
-                $t("configureServer.wechatVideoObfuscation")
-              }}</option>
-              <option value="dtls">{{
-                `${$t("configureServer.dtlsObfuscation")}(${$t(
-                  "configureServer.forceTLS"
-                )})`
-              }}</option>
-              <option value="wireguard">{{
-                $t("configureServer.wireguardObfuscation")
-              }}</option>
+              <option value="none"
+                >{{ $t("configureServer.noObfuscation") }}
+              </option>
+              <option value="srtp"
+                >{{ $t("configureServer.srtpObfuscation") }}
+              </option>
+              <option value="utp"
+                >{{ $t("configureServer.utpObfuscation") }}
+              </option>
+              <option value="wechat-video"
+                >{{ $t("configureServer.wechatVideoObfuscation") }}
+              </option>
+              <option value="dtls"
+                >{{
+                  `${$t("configureServer.dtlsObfuscation")}(${$t(
+                    "configureServer.forceTLS"
+                  )})`
+                }}
+              </option>
+              <option value="wireguard"
+                >{{ $t("configureServer.wireguardObfuscation") }}
+              </option>
             </b-select>
           </b-field>
           <b-field
@@ -147,6 +149,17 @@
               :placeholder="$t('configureServer.pathObfuscation')"
               expanded
             />
+          </b-field>
+          <b-field label="AllowInsecure" label-position="on-border">
+            <b-select
+              ref="vmess_allow_insecure"
+              v-model="vmess.allowInsecure"
+              expanded
+              required
+            >
+              <option :value="false">{{ $t("operations.no") }}</option>
+              <option :value="true">{{ $t("operations.yes") }}</option>
+            </b-select>
           </b-field>
         </b-tab-item>
         <b-tab-item label="SS">
@@ -204,8 +217,8 @@
               <option value="chacha20">chacha20</option>
               <option value="chacha20-ietf">chacha20-ietf</option>
               <option value="xchacha20-ietf-poly1305"
-                >xchacha20-ietf-poly1305</option
-              >
+                >xchacha20-ietf-poly1305
+              </option>
               <option value="salsa20">salsa20</option>
               <option value="camellia-128-cfb">camellia-128-cfb</option>
               <option value="camellia-192-cfb">camellia-192-cfb</option>
@@ -322,6 +335,91 @@
             />
           </b-field>
         </b-tab-item>
+        <b-tab-item label="PingTunnel">
+          <b-field label="Name" label-position="on-border">
+            <b-input
+              ref="pingtunnel_name"
+              v-model="pingtunnel.name"
+              :placeholder="$t('configureServer.servername')"
+              expanded
+            />
+          </b-field>
+          <b-field label="Address" label-position="on-border">
+            <b-input
+              ref="pingtunnel_server"
+              v-model="pingtunnel.server"
+              required
+              placeholder="IP / HOST"
+              expanded
+            />
+          </b-field>
+          <b-field label="Password" label-position="on-border">
+            <b-input
+              ref="pingtunnel_password"
+              v-model="pingtunnel.password"
+              required
+              :placeholder="$t('configureServer.password')"
+              type="number"
+              expanded
+            />
+          </b-field>
+        </b-tab-item>
+        <b-tab-item label="Trojan">
+          <b-field label="Name" label-position="on-border">
+            <b-input
+              ref="trojan_name"
+              v-model="trojan.name"
+              :placeholder="$t('configureServer.servername')"
+              expanded
+            />
+          </b-field>
+          <b-field label="Address" label-position="on-border">
+            <b-input
+              ref="trojan_server"
+              v-model="trojan.server"
+              required
+              placeholder="IP / HOST"
+              expanded
+            />
+          </b-field>
+          <b-field label="Port" label-position="on-border">
+            <b-input
+              ref="trojan_port"
+              v-model="trojan.port"
+              required
+              :placeholder="$t('configureServer.port')"
+              type="number"
+              expanded
+            />
+          </b-field>
+          <b-field label="Password" label-position="on-border">
+            <b-input
+              ref="trojan_password"
+              v-model="trojan.password"
+              required
+              :placeholder="$t('configureServer.password')"
+              expanded
+            />
+          </b-field>
+          <b-field label="Peer" label-position="on-border">
+            <b-input
+              v-model="trojan.peer"
+              :placeholder="`Peer(${$t('common.optional')})`"
+              expanded
+            />
+          </b-field>
+          <b-field label="AllowInsecure" label-position="on-border">
+            <b-select
+              ref="trojan_allow_insecure"
+              v-model="trojan.allowInsecure"
+              expanded
+              required
+            >
+              <option :value="false">{{ $t("operations.no") }}</option>
+              <option :value="true">{{ $t("operations.yes") }}</option>
+            </b-select>
+          </b-field>
+        </b-tab-item>
       </b-tabs>
     </section>
     <footer v-if="!readonly" class="modal-card-foot flex-end">
@@ -338,6 +436,7 @@
 <script>
 import { handleResponse } from "@/assets/js/utils";
 import { Base64 } from "js-base64";
+import { parseURL, generateURL } from "../assets/js/utils";
 
 export default {
   name: "ModalServer",
@@ -366,6 +465,7 @@ export default {
       path: "",
       tls: "none",
       v: "",
+      allowInsecure: false,
       protocol: "vmess"
     },
     ss: {
@@ -387,6 +487,21 @@ export default {
       obfs: "plain",
       obfsParam: "",
       protocol: "ssr"
+    },
+    pingtunnel: {
+      name: "",
+      server: "",
+      password: "",
+      protocol: "pingtunnel"
+    },
+    trojan: {
+      name: "",
+      server: "",
+      peer: "",
+      allowInsecure: false,
+      port: "",
+      password: "",
+      protocol: "trojan"
     },
     tabChoice: 0
   }),
@@ -415,6 +530,18 @@ export default {
           ) {
             this.ssr = this.resolveURL(res.data.data.sharingAddress);
             this.tabChoice = 2;
+          } else if (
+            res.data.data.sharingAddress
+              .toLowerCase()
+              .startsWith("pingtunnel://")
+          ) {
+            this.pingtunnel = this.resolveURL(res.data.data.sharingAddress);
+            this.tabChoice = 3;
+          } else if (
+            res.data.data.sharingAddress.toLowerCase().startsWith("trojan://")
+          ) {
+            this.trojan = this.resolveURL(res.data.data.sharingAddress);
+            this.tabChoice = 4;
           }
         });
       });
@@ -426,7 +553,8 @@ export default {
         let obj = JSON.parse(
           Base64.decode(url.substring(url.indexOf("://") + 3))
         );
-        obj.ps = unescape(obj.ps);
+        console.log(obj);
+        obj.ps = decodeURIComponent(obj.ps);
         obj.tls = obj.tls || "none";
         obj.type = obj.type || "none";
         obj.protocol = "vmess";
@@ -473,11 +601,35 @@ export default {
           obfsParam: m["obfsparam"],
           protocol: "ssr"
         };
+      } else if (url.toLowerCase().indexOf("pingtunnel://") >= 0) {
+        let u = url.substr(13);
+        u = Base64.decode(u);
+        const regexp = /(.+):(.+)#(.*)/;
+        let arr = regexp.exec(u);
+        return {
+          server: arr[1],
+          password: Base64.decode(arr[2]),
+          name: decodeURIComponent(arr[3]),
+          protocol: "pingtunnel"
+        };
+      } else if (url.toLowerCase().indexOf("trojan://") >= 0) {
+        let u = parseURL(url);
+        return {
+          password: u.username,
+          server: u.host,
+          port: u.port,
+          name: u.hash,
+          peer: u.params.peer || "",
+          allowInsecure:
+            u.params.allowInsecure === true || u.params.allowInsecure === "1",
+          protocol: "trojan"
+        };
       }
       return null;
     },
     generateURL(srcObj) {
       let obj = {};
+      let params = {};
       switch (srcObj.protocol) {
         case "vmess":
           //尽量减少生成的链接长度
@@ -494,9 +646,12 @@ export default {
           return "vmess://" + Base64.encode(JSON.stringify(obj));
         case "ss":
           /* ss://BASE64(method:password)@server:port#name */
-          return `ss://${Base64.encode(
-            `${srcObj.method}:${srcObj.password}`
-          )}@${srcObj.server}:${srcObj.port}#${srcObj.name}`;
+          return (
+            `ss://${Base64.encode(`${srcObj.method}:${srcObj.password}`)}@${
+              srcObj.server
+            }:${srcObj.port}` +
+            (srcObj.name.length ? `#${Base64.encodeURI(srcObj.name)}` : "")
+          );
         case "ssr":
           /* ssr://server:port:proto:method:obfs:URLBASE64(password)/?remarks=URLBASE64(remarks)&protoparam=URLBASE64(protoparam)&obfsparam=URLBASE64(obfsparam)) */
           return `ssr://${Base64.encode(
@@ -508,6 +663,25 @@ export default {
               srcObj.protoParam
             )}&obfsparam=${Base64.encodeURI(srcObj.obfsParam)}`
           )}`;
+        case "pingtunnel":
+          return `pingtunnel://${Base64.encode(
+            `${srcObj.server}:${Base64.encodeURI(srcObj.password)}` +
+              (srcObj.name.length ? `#${encodeURIComponent(srcObj.name)}` : "")
+          )}`;
+        case "trojan":
+          /* trojan://password@server:port?allowInsecure=1&peer=peer#URIESCAPE(name) */
+          params = { allowInsecure: srcObj.allowInsecure };
+          if (srcObj.peer !== "") {
+            params.peer = srcObj.peer;
+          }
+          return generateURL({
+            protocol: "trojan",
+            username: srcObj.password,
+            host: srcObj.server,
+            port: srcObj.port,
+            hash: srcObj.name,
+            params
+          });
       }
       return null;
     },
@@ -527,6 +701,12 @@ export default {
           continue;
         }
         if (this.tabChoice === 2 && !k.startsWith("ssr_")) {
+          continue;
+        }
+        if (this.tabChoice === 3 && !k.startsWith("pingtunnel_")) {
+          continue;
+        }
+        if (this.tabChoice === 4 && !k.startsWith("trojan_")) {
           continue;
         }
         let x = this.$refs[k];
@@ -551,6 +731,10 @@ export default {
         coded = this.generateURL(this.ss);
       } else if (this.tabChoice === 2) {
         coded = this.generateURL(this.ssr);
+      } else if (this.tabChoice === 3) {
+        coded = this.generateURL(this.pingtunnel);
+      } else if (this.tabChoice === 4) {
+        coded = this.generateURL(this.trojan);
       }
       this.$emit("submit", coded);
     }
@@ -562,10 +746,13 @@ export default {
 .is-twitter .is-active a {
   color: #4099ff !important;
 }
+
 .readonly {
   pointer-events: none;
 }
+
 .same-width-5 li {
-  width: 5em;
+  min-width: 5em;
+  width: unset !important;
 }
 </style>

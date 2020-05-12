@@ -125,6 +125,9 @@
         >
           <b-field :label="`SUBSCRIPTION(${tableData.subscriptions.length})`">
             <b-table
+              :paginated="tableData.subscriptions.length > 30"
+              :current-page.sync="currentPage.subscriptions"
+              per-page="15"
               :data="tableData.subscriptions"
               :checked-rows.sync="checkedRows"
               :row-class="(row, index) => row.connected && 'is-connected'"
@@ -200,6 +203,9 @@
         >
           <b-field :label="`SERVER(${tableData.servers.length})`">
             <b-table
+              :paginated="tableData.servers.length > 30"
+              per-page="15"
+              :current-page.sync="currentPage.servers"
               :data="tableData.servers"
               :checked-rows.sync="checkedRows"
               checkable
@@ -287,6 +293,9 @@
         >
           <b-field :label="`${sub.host.toUpperCase()}(${sub.servers.length})`">
             <b-table
+              :paginated="sub.servers.length >= 150"
+              :current-page.sync="currentPage[sub.id]"
+              per-page="100"
               :data="sub.servers"
               :checked-rows.sync="checkedRows"
               checkable
@@ -405,14 +414,15 @@ import QRCode from "qrcode";
 import ClipboardJS from "clipboard";
 import { Base64 } from "js-base64";
 import ModalServer from "@/components/modalServer";
-import ModalSubscription from "./modalSuscription";
-import { waitingConnected } from "../assets/js/networkInspect";
-import axios from "../plugins/axios";
+import ModalSubscription from "@/components/modalSuscription";
+import { waitingConnected } from "@/assets/js/networkInspect";
+import axios from "@/plugins/axios";
 export default {
   name: "Node",
   components: { ModalSubscription, ModalServer },
   data() {
     return {
+      currentPage: { servers: 0, subscriptions: 0 },
       tableData: {
         servers: [],
         subscriptions: [],
@@ -499,7 +509,21 @@ export default {
           this.tableData,
           runningState.lastConnectedServer
         );
-        server.connected = false;
+        if (server.connected) {
+          server.connected = false;
+        } else {
+          //否则广播
+          this.tableData.servers.some(v => {
+            v.connected && (v = false);
+            return v.connected;
+          }) ||
+            this.tableData.subscriptions.some(s => {
+              return s.servers.some(v => {
+                v.connected && (v = false);
+                return v.connected;
+              });
+            });
+        }
       }
       if (runningState.connectedServer) {
         let server = locateServer(this.tableData, runningState.connectedServer);
@@ -656,7 +680,7 @@ export default {
               });
             }
           }),
-          5 * 1000,
+          3 * 1000,
           cancel
         );
       } else {
@@ -815,10 +839,10 @@ export default {
                         </div>
                     </section>
                     <footer class="modal-card-foot" style="justify-content: center">
-                        <a class="is-link" href="https://github.com/mzz2017/V2RayA" target="_blank">
-                          <img class="leave-right" src="https://img.shields.io/github/stars/mzz2017/V2RayA.svg?style=social" alt="stars">
-                          <img class="leave-right" src="https://img.shields.io/github/forks/mzz2017/V2RayA.svg?style=social" alt="forks">
-                          <img class="leave-right" src="https://img.shields.io/github/watchers/mzz2017/V2RayA.svg?style=social" alt="watchers">
+                        <a class="is-link" href="https://github.com/mzz2017/v2rayA" target="_blank">
+                          <img class="leave-right" src="https://img.shields.io/github/stars/mzz2017/v2rayA.svg?style=social" alt="stars">
+                          <img class="leave-right" src="https://img.shields.io/github/forks/mzz2017/v2rayA.svg?style=social" alt="forks">
+                          <img class="leave-right" src="https://img.shields.io/github/watchers/mzz2017/v2rayA.svg?style=social" alt="watchers">
                         </a>
                     </footer>
                 </div>
@@ -907,7 +931,8 @@ export default {
         data: {
           url: url,
           which: this.which
-        }
+        },
+        timeout: 0
       }).then(res => {
         handleResponse(res, this, () => {
           this.$buefy.toast.open({
@@ -940,7 +965,7 @@ export default {
           actionText: this.$t("operations.helpManual"),
           onAction: () => {
             window.open(
-              "https://github.com/mzz2017/V2RayA#%E4%BD%BF%E7%94%A8",
+              "https://github.com/mzz2017/v2rayA#%E4%BD%BF%E7%94%A8",
               "_blank"
             );
           }
@@ -1008,7 +1033,7 @@ td {
 </style>
 
 <style lang="scss">
-@import "../../node_modules/bulma/sass/utilities/all";
+@import "~bulma/sass/utilities/all";
 #toolbar {
   padding: 0.75em 0.75em 0;
   margin-bottom: 1rem;

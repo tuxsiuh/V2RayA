@@ -2,8 +2,8 @@ package netstat
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"v2ray.com/core/common/errors"
 )
 
 // Socket states
@@ -67,7 +68,7 @@ type Address struct {
 func parseIPv4(s string) (net.IP, error) {
 	v, err := strconv.ParseUint(s, 16, 32)
 	if err != nil {
-		return nil, err
+		return nil, newError(err)
 	}
 	ip := make(net.IP, net.IPv4len)
 	binary.LittleEndian.PutUint32(ip, uint32(v))
@@ -83,7 +84,7 @@ func parseIPv6(s string) (net.IP, error) {
 		u, err := strconv.ParseUint(grp, 16, 32)
 		binary.LittleEndian.PutUint32(ip[i:j], uint32(u))
 		if err != nil {
-			return nil, err
+			return nil, newError(err)
 		}
 		i, j = i+grpLen, j+grpLen
 		s = s[8:]
@@ -104,14 +105,14 @@ func parseAddr(s string) (*Address, error) {
 	case ipv6StrLen:
 		ip, err = parseIPv6(fields[0])
 	default:
-		return nil, errors.New("Bad formatted string")
+		return nil, newError("Bad formatted string")
 	}
 	if err != nil {
-		return nil, err
+		return nil, newError(err)
 	}
 	v, err := strconv.ParseUint(fields[1], 16, 16)
 	if err != nil {
-		return nil, err
+		return nil, newError(err)
 	}
 	return &Address{IP: ip, Port: int(v),}, nil
 }
@@ -135,10 +136,6 @@ const (
 	SocketFreed = "process not found, correspond socket was freed"
 )
 
-func IsSocketFreed(err error) bool {
-	return err != nil && errors.Is(err, errors.New(SocketFreed))
-}
-
 /*
 较为消耗资源
 */
@@ -148,20 +145,14 @@ func (s *Socket) Process() (*Process, error) {
 	if s.process != nil {
 		return s.process, nil
 	}
-	f, err := os.Open(pathProc)
+	f, err := ioutil.ReadDir(pathProc)
 	if err != nil {
 		return nil, nil
 	}
-	names, err := f.Readdirnames(-1)
-	f.Close()
-	if err != nil {
-		return nil, err
-	}
 loop1:
-	for _, fn := range names {
-		p := filepath.Join(pathProc, fn)
-		fi, err := os.Stat(p)
-		if err != nil || !fi.IsDir() {
+	for _, fi := range f {
+		fn := fi.Name()
+		if !fi.IsDir() {
 			continue
 		}
 		for _, t := range fn {
@@ -169,7 +160,7 @@ loop1:
 				continue loop1
 			}
 		}
-		if isProcessSocket(fn, s.inode) {
+		if isProcessSocket(fn, []string{s.inode}) {
 			s.process = &Process{
 				PID:  fn,
 				Name: getProcessName(fn),
@@ -177,29 +168,27 @@ loop1:
 			return s.process, nil
 		}
 	}
-	return nil, errors.New(SocketFreed)
+	return nil, newError(SocketFreed)
 }
 
 /*
 没有做缓存，每次调用都会扫描，消耗资源
 */
+
+var ErrorNotFound = newError("process not found")
+
 func findProcessID(pname string) (pid string, err error) {
-	f, err := os.Open(pathProc)
+	f, err := ioutil.ReadDir(pathProc)
 	if err != nil {
-		return
-	}
-	names, err := f.Readdirnames(-1)
-	f.Close()
-	if err != nil {
+		err = newError(err)
 		return
 	}
 loop1:
-	for _, fn := range names {
-		p := filepath.Join(pathProc, fn)
-		fi, err := os.Stat(p)
-		if err != nil || !fi.IsDir() {
+	for _, fi := range f {
+		if !fi.IsDir() {
 			continue
 		}
+		fn := fi.Name()
 		for _, t := range fn {
 			if t > '9' || t < '0' {
 				continue loop1
@@ -209,23 +198,36 @@ loop1:
 			return fn, nil
 		}
 	}
-	return "", errors.New("not found")
+	return "", ErrorNotFound
+}
+
+func getProcName(s string) string {
+	i := strings.Index(s, "(")
+	if i < 0 {
+		return ""
+	}
+	s = s[i+1:]
+	j := strings.LastIndex(s, ")")
+	if j < 0 {
+		return ""
+	}
+	return s[:j]
 }
 
 func getProcessName(pid string) (pn string) {
 	p := filepath.Join(pathProc, pid, "stat")
 	b, err := ioutil.ReadFile(p)
 	if err != nil {
+		err = newError(err)
 		return
 	}
-	sp := strings.SplitN(string(b), " ", 3)
-	pn = sp[1]
-	return pn[1 : len(pn)-1]
+	sp := bytes.SplitN(b, []byte(" "), 3)
+	pn = string(sp[1])
+	return getProcName(pn)
 }
 
-func isProcessSocket(pid string, socketInode string) bool {
+func isProcessSocket(pid string, socketInode []string) bool {
 	// link name is of the form socket:[5860846]
-	target := "socket:[" + socketInode + "]"
 	p := filepath.Join(pathProc, pid, "fd")
 	f, err := os.Open(p)
 	fns, err := f.Readdirnames(-1)
@@ -238,15 +240,41 @@ func isProcessSocket(pid string, socketInode string) bool {
 		if err != nil {
 			continue
 		}
-		if lk == target {
-			return true
+		for _, s := range socketInode {
+			target := "socket:[" + s + "]"
+			if lk == target {
+				return true
+			}
 		}
 	}
 	return false
 }
-func parseSocktab(r io.Reader) (map[int]Socket, error) {
+
+func getProcessSocketSet(pid string) (set []string) {
+	// link name is of the form socket:[5860846]
+	p := filepath.Join(pathProc, pid, "fd")
+	f, err := os.Open(p)
+	fns, err := f.Readdirnames(-1)
+	f.Close()
+	if err != nil {
+		err = newError(err)
+		return
+	}
+	for _, fn := range fns {
+		lk, err := os.Readlink(filepath.Join(p, fn))
+		if err != nil {
+			continue
+		}
+		if strings.HasPrefix(lk, "socket:[") {
+			set = append(set, lk[8:len(lk)-1])
+		}
+	}
+	return
+}
+
+func parseSocktab(r io.Reader) (map[int][]*Socket, error) {
 	br := bufio.NewScanner(r)
-	tab := make(map[int]Socket)
+	tab := make(map[int][]*Socket)
 
 	// Discard title
 	br.Scan()
@@ -274,17 +302,21 @@ func parseSocktab(r io.Reader) (map[int]Socket, error) {
 		s.RemoteAddress = addr
 		u, err := strconv.ParseUint(fields[3], 16, 8)
 		if err != nil {
+			err = newError(err)
 			return tab, err
 		}
 		s.State = SkState(u)
 		s.UID = fields[7]
 		s.inode = fields[9]
-		tab[s.LocalAddress.Port] = s
+		tab[s.LocalAddress.Port] = append(tab[s.LocalAddress.Port], &s)
 	}
-	return tab, br.Err()
+	if br.Err() != nil {
+		return nil, newError(br.Err())
+	}
+	return tab, nil
 }
-func ToPortMap(protocols []string) map[string]map[int]Socket {
-	m := make(map[string]map[int]Socket)
+func ToPortMap(protocols []string) (map[string]map[int][]*Socket, error) {
+	m := make(map[string]map[int][]*Socket)
 	for _, proto := range protocols {
 		switch proto {
 		case "tcp", "tcp6", "udp", "udp6":
@@ -292,27 +324,124 @@ func ToPortMap(protocols []string) map[string]map[int]Socket {
 			if err != nil {
 				continue
 			}
-			m[proto], _ = parseSocktab(b)
-		default:
-		}
-	}
-	return m
-}
-
-func IsProcessPort(pname string, port int, protocols []string) (is bool) {
-	pid, err := findProcessID(pname)
-	if err != nil {
-		return
-	}
-	m := ToPortMap(protocols)
-	for _, proto := range protocols {
-		switch proto {
-		case "tcp", "tcp6", "udp", "udp6":
-			if v, ok := m[proto][port]; ok && isProcessSocket(pid, v.inode) {
-				return true
+			m[proto], err = parseSocktab(b)
+			if err != nil {
+				return nil, err
 			}
 		default:
 		}
 	}
-	return false
+
+	return m, nil
+}
+
+func IsProcessListenPort(pname string, port int) (is bool, err error) {
+	protocols := []string{"tcp", "tcp6"}
+	m, err := ToPortMap(protocols)
+	if err != nil {
+		return
+	}
+	iNodes := make([]string, 0, len(protocols))
+	for _, proto := range protocols {
+		for _, v := range m[proto][port] {
+			if v.State == Listen || v.State == Established {
+				iNodes = append(iNodes, v.inode)
+			}
+		}
+	}
+	if len(iNodes) == 0 {
+		return false, nil
+	}
+	pid, err := findProcessID(pname)
+	if err != nil {
+		if errors.Cause(err) == ErrorNotFound {
+			return false, nil
+		}
+		return
+	}
+	return isProcessSocket(pid, iNodes), nil
+}
+
+func FillAllProcess(sockets []*Socket) {
+	mInodeSocket := make(map[string]*Socket)
+	for _, v := range sockets {
+		if v.process == nil {
+			mInodeSocket[v.inode] = v
+			v.processMutex.Lock()
+			defer v.processMutex.Unlock()
+		}
+	}
+	f, err := ioutil.ReadDir(pathProc)
+	if err != nil {
+		return
+	}
+loop1:
+	for _, fi := range f {
+		if !fi.IsDir() {
+			continue
+		}
+		fn := fi.Name()
+		for _, t := range fn {
+			if t > '9' || t < '0' {
+				continue loop1
+			}
+		}
+		socketSet := getProcessSocketSet(fn)
+		for _, s := range socketSet {
+			if socket, ok := mInodeSocket[s]; ok {
+				socket.process = &Process{
+					PID:  fn,
+					Name: getProcessName(fn),
+				}
+			}
+			delete(mInodeSocket, s)
+		}
+	}
+}
+
+func Print(protocols []string) string {
+	var buffer strings.Builder
+	protos := make([]string, 0, 4)
+	for _, proto := range protocols {
+		switch proto {
+		case "tcp", "tcp6", "udp", "udp6":
+			protos = append(protos, proto)
+		}
+	}
+	m, err := ToPortMap(protos)
+	if err != nil {
+		return ""
+	}
+	buffer.WriteString(fmt.Sprintf("%-6v%-25v%-25v%-15v%-6v%-9v%v\n", "Proto", "Local Address", "Foreign Address", "State", "User", "Inode", "PID/Program name"))
+	var sockets []*Socket
+	for _, proto := range protos {
+		for _, v := range m[proto] {
+			sockets = append(sockets, v...)
+		}
+	}
+	FillAllProcess(sockets)
+	for _, proto := range protos {
+		for _, sockets := range m[proto] {
+			for _, v := range sockets {
+				process, err := v.Process()
+				var pstr string
+				if err != nil {
+					pstr = ""
+				} else {
+					pstr = process.PID + "/" + process.Name
+				}
+				buffer.WriteString(fmt.Sprintf(
+					"%-6v%-25v%-25v%-15v%-6v%-9v%v\n",
+					proto,
+					v.LocalAddress.IP.String()+"/"+strconv.Itoa(v.LocalAddress.Port),
+					v.RemoteAddress.IP.String()+"/"+strconv.Itoa(v.RemoteAddress.Port),
+					v.State.String(),
+					v.UID,
+					v.inode,
+					pstr,
+				))
+			}
+		}
+	}
+	return buffer.String()
 }

@@ -1,12 +1,11 @@
 package controller
 
 import (
-	"V2RayA/core/touch"
-	"V2RayA/core/v2ray"
-	"V2RayA/persistence/configure"
-	"V2RayA/service"
-	"V2RayA/common"
-	"errors"
+	"v2rayA/common"
+	"v2rayA/core/touch"
+	"v2rayA/core/v2ray"
+	"v2rayA/persistence/configure"
+	"v2rayA/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,12 +25,12 @@ func DeleteTouch(ctx *gin.Context) {
 	var ws configure.Whiches
 	err := ctx.ShouldBindJSON(&ws)
 	if err != nil {
-		common.ResponseError(ctx, errors.New("bad request"))
+		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
 	err = service.DeleteWhich(ws.Get())
 	if err != nil {
-		common.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
 	GetTouch(ctx)

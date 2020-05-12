@@ -1,15 +1,15 @@
 package service
 
 import (
-	"V2RayA/core/v2ray"
-	"V2RayA/global"
-	"V2RayA/persistence/configure"
-	"errors"
+	"v2rayA/core/v2ray"
+	"v2rayA/core/v2ray/asset/gfwlist"
+	"v2rayA/global"
+	"v2rayA/persistence/configure"
 	"log"
 )
 
 func Disconnect() (err error) {
-	global.SSRs.ClearAll()
+	global.Plugins.CloseAll()
 	err = v2ray.StopV2rayService()
 	if err != nil {
 		return
@@ -25,11 +25,25 @@ func Disconnect() (err error) {
 	return
 }
 
+func checkAssetsExist(setting *configure.Setting) error {
+	//FIXME: non-fully check
+	if setting.PacMode == configure.GfwlistMode || setting.Transparent == configure.TransparentGfwlist {
+		if !gfwlist.LoyalsoldierSiteDatExists() {
+			return newError("GFWList file not exists. Try updating GFWList please")
+		}
+	}
+	return nil
+}
+
 func Connect(which *configure.Which) (err error) {
 	log.Println("Connect: begin")
 	defer log.Println("Connect: done")
+	setting := GetSetting()
+	if err = checkAssetsExist(setting); err != nil {
+		return
+	}
 	if which == nil {
-		return errors.New("which can not be nil")
+		return newError("which can not be nil")
 	}
 	//定位Server
 	tsr, err := which.LocateServer()

@@ -1,16 +1,17 @@
 package service
 
 import (
-	"V2RayA/core/nodeData"
-	"V2RayA/core/touch"
-	"V2RayA/persistence/configure"
-	"V2RayA/common"
-	"V2RayA/common/httpClient"
 	"bytes"
-	"errors"
 	"log"
 	"net/http"
 	"strings"
+	"time"
+	"v2ray.com/core/common/errors"
+	"v2rayA/common"
+	"v2rayA/common/httpClient"
+	"v2rayA/core/nodeData"
+	"v2rayA/core/touch"
+	"v2rayA/persistence/configure"
 )
 
 func ResolveSubscription(source string) (infos []*nodeData.NodeData, err error) {
@@ -19,15 +20,20 @@ func ResolveSubscription(source string) (infos []*nodeData.NodeData, err error) 
 
 func ResolveSubscriptionWithClient(source string, client *http.Client) (infos []*nodeData.NodeData, err error) {
 	// get请求source
-	res, err := httpClient.HttpGetUsingSpecificClient(client, source)
+	c := *client
+	c.Timeout = 30 * time.Second
+	res, err := httpClient.HttpGetUsingSpecificClient(&c, source)
 	if err != nil {
 		return
 	}
 	buf := new(bytes.Buffer)
 	_, _ = buf.ReadFrom(res.Body)
 	defer res.Body.Close()
-	// base64解码, raw是多行vmess
-	raw, _ := common.Base64StdDecode(buf.String())
+	// base64解码, raw是多行vmess/ss/ssr/trojan
+	raw, err := common.Base64StdDecode(buf.String())
+	if err != nil {
+		raw, _ = common.Base64URLDecode(buf.String())
+	}
 	// 切分raw
 	rows := strings.Split(strings.TrimSpace(raw), "\n")
 	// 解析
@@ -36,7 +42,7 @@ func ResolveSubscriptionWithClient(source string, client *http.Client) (infos []
 		var data *nodeData.NodeData
 		data, err = ResolveURL(row)
 		if err != nil {
-			if !strings.Contains(err.Error(), "空地址") {
+			if errors.Cause(err) != ErrorEmptyAddress {
 				log.Println(row, err)
 			}
 			err = nil
@@ -53,13 +59,13 @@ func UpdateSubscription(index int, disconnectIfNecessary bool) (err error) {
 	c, err := httpClient.GetHttpClientAutomatically()
 	if err != nil {
 		reason := "fail in get proxy"
-		return errors.New(reason)
+		return newError(reason)
 	}
 	infos, err := ResolveSubscriptionWithClient(addr, c)
 	if err != nil {
 		reason := "fail in resolving subscription address: " + err.Error()
 		log.Println(infos, err)
-		return errors.New(reason)
+		return newError(reason)
 	}
 	tsrs := make([]configure.ServerRaw, len(infos))
 	var connectedServer *configure.ServerRaw
@@ -98,7 +104,7 @@ func UpdateSubscription(index int, disconnectIfNecessary bool) (err error) {
 			err = Disconnect()
 			if err != nil {
 				reason := "fail in disconnecting previous server"
-				return errors.New(reason)
+				return newError(reason)
 			}
 		} else if connectedServer != nil {
 			//将之前连接的节点append进去
@@ -118,7 +124,7 @@ func UpdateSubscription(index int, disconnectIfNecessary bool) (err error) {
 func ModifySubscriptionRemark(subscription touch.Subscription) (err error) {
 	raw := configure.GetSubscription(subscription.ID - 1)
 	if raw == nil {
-		return errors.New("fail in finding the corresponding subscription")
+		return newError("fail in finding the corresponding subscription")
 	}
 	raw.Remarks = subscription.Remarks
 	return configure.SetSubscription(subscription.ID-1, raw)

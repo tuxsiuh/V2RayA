@@ -1,14 +1,6 @@
 package service
 
 import (
-	"V2RayA/common/httpClient"
-	"V2RayA/common/process/netstat"
-	"V2RayA/core/shadowsocksr"
-	"V2RayA/core/v2ray"
-	"V2RayA/core/vmessInfo"
-	"V2RayA/global"
-	"V2RayA/persistence/configure"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,16 +8,27 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"v2rayA/common/httpClient"
+	"v2rayA/common/netTools/netstat"
+	"v2rayA/core/v2ray"
+	"v2rayA/core/vmessInfo"
+	"v2rayA/global"
+	"v2rayA/persistence/configure"
+	"v2rayA/plugins"
 )
 
-func Ping(which []configure.Which, timeout time.Duration) ([]configure.Which, error) {
+func Ping(which []configure.Which, timeout time.Duration) (_ []configure.Which, err error) {
 	var whiches configure.Whiches
 	whiches.Set(which)
 	//对要Ping的which去重
 	which = whiches.GetNonDuplicated()
 	//暂时关闭透明代理
 	v2ray.CheckAndStopTransparentProxy()
-	defer v2ray.CheckAndSetupTransparentProxy(true)
+	defer func() {
+		if e := v2ray.CheckAndSetupTransparentProxy(true); err == nil && e != nil {
+			err = e
+		}
+	}()
 	//多线程异步ping
 	wg := new(sync.WaitGroup)
 	for i, v := range which {
@@ -45,6 +48,18 @@ func Ping(which []configure.Which, timeout time.Duration) ([]configure.Which, er
 		}
 	}
 	return which, nil
+}
+
+func isOccupiedTCPPort(nsmap map[string]map[int][]*netstat.Socket, port int) bool {
+	v := nsmap["tcp"][port]
+	v6 := nsmap["tcp6"][port]
+	v = append(v, v6...)
+	for _, v := range v {
+		if v.State != netstat.Close {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHttpLatency(which []configure.Which, timeout time.Duration, maxParallel int) ([]configure.Which, error) {
@@ -82,9 +97,12 @@ func TestHttpLatency(which []configure.Which, timeout time.Duration, maxParallel
 		tmpl = v2ray.NewTemplate()
 	}
 	portMap := make(map[int]string)
-	ssrPortMap := make(map[int]int)
+	pluginPortMap := make(map[int]int)
 	port := 0
-	nsmap := netstat.ToPortMap([]string{"tcp", "tcp6"})
+	nsmap, err := netstat.ToPortMap([]string{"tcp", "tcp6"})
+	if err != nil {
+		return nil, err
+	}
 	for i, v := range vms {
 		if which[i].Latency != "" {
 			continue
@@ -96,32 +114,30 @@ func TestHttpLatency(which []configure.Which, timeout time.Duration, maxParallel
 			port = port + 1
 		}
 		for {
-			v, ok := nsmap["tcp"][port]
-			v6, ok6 := nsmap["tcp6"][port]
-			if (ok && v.State != netstat.Close) || (ok6 && v6.State != netstat.Close) {
-				port++
-			} else {
+			if !isOccupiedTCPPort(nsmap, port) {
 				break
 			}
+			port++
 		}
 		v2rayInboundPort := strconv.Itoa(port)
 		ssrLocalPortIfNeed := 0
 		switch strings.ToLower(v.Protocol) {
-		case "shadowsocksr", "shadowsocks", "ss", "ssr":
+		case "vmess", "":
+			//pass
+		default:
+			if !plugins.IsProtocolValid(v) {
+				continue
+			}
 			//再找一个空端口
 			port++
 			for {
-				v, ok := nsmap["tcp"][port]
-				v6, ok6 := nsmap["tcp6"][port]
-				if (ok && v.State != netstat.Close) || (ok6 && v6.State != netstat.Close) {
-					port++
-				} else {
+				if !isOccupiedTCPPort(nsmap, port) {
 					break
 				}
+				port++
 			}
 			ssrLocalPortIfNeed = port
-			ssrPortMap[i] = port
-		default:
+			pluginPortMap[i] = port
 		}
 		err := tmpl.AddMappingOutbound(v, v2rayInboundPort, false, ssrLocalPortIfNeed, "")
 		if err != nil {
@@ -130,20 +146,20 @@ func TestHttpLatency(which []configure.Which, timeout time.Duration, maxParallel
 		}
 		portMap[i] = v2rayInboundPort
 	}
-	//启ssr
-	//不清SSRs，防止断开当前连接
-	if len(ssrPortMap) > 0 {
-		for i, localPort := range ssrPortMap {
+	//启plugin
+	//不清plugins，防止断开当前连接
+	if len(pluginPortMap) > 0 {
+		for i, localPort := range pluginPortMap {
 			v := vms[i]
-			ssr := new(shadowsocksr.SSR)
-			err := ssr.Serve(localPort, v.Net, v.ID, v.Add, v.Port, v.TLS, v.Path, v.Type, v.Host)
+			var plugin plugins.Plugin
+			plugin, err = plugins.NewPlugin(localPort, v)
 			if err != nil {
 				return nil, err
 			}
-			global.SSRs.Append(*ssr)
+			global.Plugins.Append(plugin)
 		}
 	}
-	err := v2ray.WriteV2rayConfig(tmpl.ToConfigBytes())
+	err = v2ray.WriteV2rayConfig(tmpl.ToConfigBytes())
 	if err != nil {
 		return nil, err
 	}
@@ -167,11 +183,11 @@ func TestHttpLatency(which []configure.Which, timeout time.Duration, maxParallel
 		}(i)
 	}
 	wg.Wait()
-	global.SSRs.ClearAll()
+	global.Plugins.CloseAll()
 	if v2rayRunning && configure.GetConnectedServer() != nil {
 		err = v2ray.UpdateV2RayConfig(nil)
 		if err != nil {
-			return which, errors.New("fail in restart v2ray-core, please connect a server")
+			return which, newError("fail in restart v2ray-core, please connect a server")
 		}
 	} else {
 		_ = v2ray.StopV2rayService() //没关掉那就不好意思了
@@ -187,17 +203,20 @@ func httpLatency(which *configure.Which, port string, timeout time.Duration) {
 	defer c.CloseIdleConnections()
 	c.Timeout = timeout
 	t := time.Now()
-	req, _ := http.NewRequest("GET", "https://www.youtube.com", nil)
+	// NOT follow redirects
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	req, _ := http.NewRequest("HEAD", "http://www.alibaba.com", nil)
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Connection", "close")
 	resp, err := c.Do(req)
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		s, _ := which.LocateServer()
 		if err != nil {
 			es := strings.ToLower(err.Error())
-			s, _ := which.LocateServer()
-			log.Println(err, s.VmessInfo.Add+":"+s.VmessInfo.Port)
 			switch {
 			case strings.Contains(es, "eof"):
 				which.Latency = "NOT STABLE"
@@ -208,8 +227,10 @@ func httpLatency(which *configure.Which, port string, timeout time.Duration) {
 			default:
 				which.Latency = err.Error()
 			}
+			log.Println(err, s.VmessInfo.Add+":"+s.VmessInfo.Port)
 		} else {
 			which.Latency = "BAD RESPONSE"
+			log.Println(resp.Status, s.VmessInfo.Add+":"+s.VmessInfo.Port)
 		}
 		return
 	}

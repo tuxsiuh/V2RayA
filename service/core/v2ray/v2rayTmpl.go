@@ -1,14 +1,7 @@
 package v2ray
 
 import (
-	"V2RayA/global"
-	"V2RayA/core/dnsPoison/entity"
-	"V2RayA/core/routingA"
-	"V2RayA/core/v2ray/asset"
-	"V2RayA/core/vmessInfo"
-	"V2RayA/persistence/configure"
 	"bytes"
-	"errors"
 	"fmt"
 	jsoniter "github.com/json-iterator/go"
 	"io/ioutil"
@@ -19,6 +12,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"v2rayA/core/dnsPoison/entity"
+	"v2rayA/core/routingA"
+	"v2rayA/core/v2ray/asset"
+	"v2rayA/core/vmessInfo"
+	"v2rayA/global"
+	"v2rayA/persistence/configure"
 )
 
 /*对应template.json*/
@@ -245,13 +244,13 @@ func NewTemplate() (tmpl Template) {
 函数会规格化传入的v
 */
 
-func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, ssrLocalPortIfNeed int) (o Outbound, err error) {
+func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Outbound, err error) {
 	var tmplJson TmplJson
 	// 读入模板json
 	raw := []byte(TemplateJson)
 	err = jsoniter.Unmarshal(raw, &tmplJson)
 	if err != nil {
-		return o, errors.New("error occurs while reading template json, please check whether templateJson variable is correct json format")
+		return o, newError("error occurs while reading template json, please check whether templateJson variable is correct json format")
 	}
 	// 其中Template是基础配置，替换掉*t即可
 	o = tmplJson.Template.Outbounds[0]
@@ -307,8 +306,11 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, ssrLocalPortIfNeed int)
 		if strings.ToLower(v.TLS) == "tls" {
 			o.StreamSettings.Security = "tls"
 			o.StreamSettings.TLSSettings = &tmplJson.TLSSettings
-			// if v.add is ip address and host is not empty, set SNI
-			if v.Host != "" && net.ParseIP(v.Add) != nil {
+			if v.AllowInsecure {
+				o.StreamSettings.TLSSettings.AllowInsecure = true
+			}
+			// always set SNI
+			if v.Host != "" {
 				o.StreamSettings.TLSSettings.ServerName = v.Host
 			}
 		}
@@ -317,7 +319,7 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, ssrLocalPortIfNeed int)
 		switch v.Net {
 		case "aes-128-cfb", "aes-192-cfb", "aes-256-cfb", "aes-128-ctr", "aes-192-ctr", "aes-256-ctr", "aes-128-ofb", "aes-192-ofb", "aes-256-ofb", "des-cfb", "bf-cfb", "cast5-cfb", "rc4-md5", "chacha20", "chacha20-ietf", "salsa20", "camellia-128-cfb", "camellia-192-cfb", "camellia-256-cfb", "idea-cfb", "rc2-cfb", "seed-cfb":
 		default:
-			return o, errors.New("unsupported shadowsocks encryption method: " + v.Net)
+			return o, newError("unsupported shadowsocks encryption method: " + v.Net)
 		}
 		if len(strings.TrimSpace(v.Type)) <= 0 {
 			v.Type = "origin"
@@ -325,7 +327,7 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, ssrLocalPortIfNeed int)
 		switch v.Type {
 		case "origin", "verify_sha1", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1":
 		default:
-			return o, errors.New("unsupported shadowsocksR protocol: " + v.Type)
+			return o, newError("unsupported shadowsocksR protocol: " + v.Type)
 		}
 		if len(strings.TrimSpace(v.TLS)) <= 0 {
 			v.TLS = "plain"
@@ -333,24 +335,26 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, ssrLocalPortIfNeed int)
 		switch v.TLS {
 		case "plain", "http_simple", "http_post", "random_head", "tls1.2_ticket_auth":
 		default:
-			return o, errors.New("unsupported shadowsocksr obfuscation method: " + v.TLS)
+			return o, newError("unsupported shadowsocksr obfuscation method: " + v.TLS)
 		}
+	case "pingtunnel", "trojan":
+	default:
+		return o, newError("unsupported protocol: " + v.Protocol)
+	}
+	if v.Protocol != "vmess" && pluginPort != nil {
 		o.Protocol = "socks"
 		o.Settings.Servers = []Server{
 			{
 				Address: "127.0.0.1",
-				Port:    ssrLocalPortIfNeed,
+				Port:    *pluginPort,
 			},
 		}
-	default:
-		return o, errors.New("unsupported protocol: " + v.Protocol)
 	}
 	o.Tag = tag
 	return
 }
 
-func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool) (dohIPs, dohDomains []string) {
-	setting := configure.GetSettingNotNil()
+func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *configure.Setting) (dohIPs, dohDomains []string) {
 	//先修改DNS设置
 	t.DNS = new(DNS)
 	switch setting.AntiPollution {
@@ -372,12 +376,13 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool) (dohIPs, dohDo
 				},
 			}
 		} else {
-			//由于ss, ssr不支持udp
+			//由于plugin不支持udp
 			//先优先请求DoH（tcp）
 			if err := CheckDohSupported(); err == nil {
+				//DNS转发，所以使用全球友好的DNS服务器
 				t.DNS.Servers = []interface{}{
-					"https://dns.google/dns-query",
 					"https://1.0.0.1/dns-query",
+					"https://dns.google/dns-query",
 				}
 			}
 			if len(t.DNS.Servers) <= 0 {
@@ -413,6 +418,7 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool) (dohIPs, dohDo
 					dohDomains = append(dohDomains, uu.Hostname())
 					addrs, e := net.LookupHost(uu.Hostname())
 					if e != nil {
+						log.Println("net.LookupHost:", e)
 						continue
 					}
 					dohIPs = append(dohIPs, addrs...)
@@ -429,8 +435,8 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool) (dohIPs, dohDo
 				"geosite:cn",          // 国内白名单走DNSPod
 				"domain:ntp.org",      // NTP 服务器
 				"domain:dogedoge.com", // mzz2017爱用的多吉
-				"full:v2raya.mzz.pub", // V2RayA demo
-				"full:v.mzz.pub",      // V2RayA demo
+				"full:v2raya.mzz.pub", // v2rayA demo
+				"full:v.mzz.pub",      // v2rayA demo
 			},
 		}
 		if len(dohDomains) > 0 {
@@ -455,8 +461,7 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool) (dohIPs, dohDo
 	return
 }
 
-func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []string) (serverIPs []string, serverDomain string) {
-	setting := configure.GetSettingNotNil()
+func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []string, setting *configure.Setting, supportUDP bool) (serverIPs []string, serverDomain string) {
 	dohRouting := make([]RoutingRule, 0)
 	if len(dohIPs) > 0 {
 		hosts := make([]string, len(dohHosts))
@@ -480,42 +485,45 @@ func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []strin
 			dohRouting[i].OutboundTag = "proxy"
 		}
 	}
-	if setting.AntiPollution != configure.AntipollutionNone {
+	if supportUDP {
 		t.Routing.Rules = append(t.Routing.Rules,
-			RoutingRule{ // 国内DNS服务器直连，以分流
-				Type:        "field",
-				OutboundTag: "direct",
-				IP:          []string{"119.29.29.29", "114.114.114.114"},
-				Port:        "53",
-			},
 			RoutingRule{ // 国外DNS服务器地址走代理，以防污染
 				Type:        "field",
 				OutboundTag: "proxy",
 				IP:          []string{"8.8.8.8", "1.1.1.1"},
 				Port:        "53",
 			},
-			RoutingRule{ // 劫持 53 端口流量，使用 V2Ray 的 DNS
-				Type:        "field",
-				Port:        "53",
-				OutboundTag: "dns-out",
-			},
-			RoutingRule{ // 非标准端口暂时安全，直连
-				Type:        "field",
-				OutboundTag: "direct",
-				IP:          []string{"208.67.222.222", "208.67.220.220"},
-				Port:        "5353",
-			})
-	} else {
-		t.Routing.Rules = append(t.Routing.Rules, RoutingRule{
+		)
+	}
+	t.Routing.Rules = append(t.Routing.Rules,
+		RoutingRule{ // 国内DNS服务器直连，以分流
 			Type:        "field",
 			OutboundTag: "direct",
 			IP:          []string{"119.29.29.29", "114.114.114.114"},
 			Port:        "53",
-		}, RoutingRule{ // 劫持 53 端口流量，使用 V2Ray 的 DNS
+		},
+		RoutingRule{ // 劫持 53 端口流量，使用 V2Ray 的 DNS
 			Type:        "field",
 			Port:        "53",
 			OutboundTag: "dns-out",
+		},
+	)
+	if setting.AntiPollution != configure.AntipollutionNone {
+		t.Routing.Rules = append(t.Routing.Rules, RoutingRule{ // 非标准端口暂时安全，直连
+			Type:        "field",
+			OutboundTag: "direct",
+			IP:          []string{"208.67.222.222", "208.67.220.220"},
+			Port:        "5353",
 		})
+	}
+	if !supportUDP {
+		t.Routing.Rules = append(t.Routing.Rules,
+			RoutingRule{
+				Type:        "field",
+				OutboundTag: "direct",
+				Network:     "udp",
+			},
+		)
 	}
 	t.Routing.Rules = append(t.Routing.Rules, dohRouting...)
 	t.Routing.Rules = append(t.Routing.Rules,
@@ -542,7 +550,10 @@ func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []strin
 		)
 		serverDomain = v.Add
 		//解析IP
-		ips, _ := net.LookupHost(v.Add)
+		ips, e := net.LookupHost(v.Add)
+		if e != nil {
+			log.Println("net.LookupHost:", e)
+		}
 		serverIPs = ips
 	}
 	//将节点IP加入白名单
@@ -557,8 +568,7 @@ func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []strin
 	return
 }
 
-func (t *Template) SetPacRouting() {
-	setting := configure.GetSettingNotNil()
+func (t *Template) SetPacRouting(setting *configure.Setting) {
 	switch setting.PacMode {
 	case configure.WhitelistMode:
 		t.Routing.Rules = append(t.Routing.Rules,
@@ -773,8 +783,7 @@ func parseRoutingA(t *Template, inboundTags []string) {
 		InboundTag:  []string{"pac"},
 	})
 }
-func (t *Template) SetTransparentRouting() {
-	setting := configure.GetSettingNotNil()
+func (t *Template) SetTransparentRouting(setting *configure.Setting) {
 	switch setting.Transparent {
 	case configure.TransparentProxy:
 	case configure.TransparentWhitelist:
@@ -842,7 +851,7 @@ func (t *Template) AppendDokodemo(tproxy *string, port int, tag string) {
 	t.Inbounds = append(t.Inbounds, dokodemo)
 }
 
-func (t *Template) SetOutboundSockopt(supportUDP bool) {
+func (t *Template) SetOutboundSockopt(supportUDP bool, setting *configure.Setting) {
 	mark := 0xff
 	//tos := 184
 	for i := range t.Outbounds {
@@ -858,7 +867,6 @@ func (t *Template) SetOutboundSockopt(supportUDP bool) {
 		if t.Outbounds[i].Protocol == "freedom" && t.Outbounds[i].Tag == "direct" {
 			t.Outbounds[i].Settings.DomainStrategy = "UseIP"
 		}
-		setting := configure.GetSettingNotNil()
 		if setting.TcpFastOpen != configure.Default {
 			tmp := setting.TcpFastOpen == configure.Yes
 			t.Outbounds[i].StreamSettings.Sockopt.TCPFastOpen = &tmp
@@ -875,7 +883,7 @@ func (t *Template) AppendDNSOutbound() {
 	})
 }
 
-func (t *Template) SetInboundPort() {
+func (t *Template) SetInbound(setting *configure.Setting) {
 	ports := configure.GetPorts()
 	if ports != nil {
 		t.Inbounds[2].Port = ports.HttpWithPac
@@ -888,15 +896,25 @@ func (t *Template) SetInboundPort() {
 			}
 		}
 	}
+	if setting.Transparent != configure.TransparentClose {
+		var tproxy string
+		if global.SupportTproxy && !setting.EnhancedMode {
+			tproxy = "tproxy"
+		} else {
+			tproxy = "redirect"
+		}
+		t.AppendDokodemo(&tproxy, 32345, "transparent")
+	}
 }
 
 func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.ExtraInfo, err error) {
+	setting := configure.GetSettingNotNil()
 	var tmplJson TmplJson
 	// 读入模板json
 	raw := []byte(TemplateJson)
 	err = jsoniter.Unmarshal(raw, &tmplJson)
 	if err != nil {
-		return t, nil, errors.New("error occurs while reading template json, please check whether templateJson variable is correct json format")
+		return t, nil, newError("error occurs while reading template json, please check whether templateJson variable is correct json format")
 	}
 	// 其中Template是基础配置，替换掉t即可
 	t = tmplJson.Template
@@ -905,12 +923,11 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 		t.Log.Loglevel = "debug"
 	}
 	// 解析Outbound
-	o, err := ResolveOutbound(&v, "proxy", global.GetEnvironmentConfig().SSRListenPort)
+	o, err := ResolveOutbound(&v, "proxy", &global.GetEnvironmentConfig().PluginListenPort)
 	if err != nil {
 		return t, nil, err
 	}
 	t.Outbounds[0] = o
-	setting := configure.GetSettingNotNil()
 	var supportUDP = true
 	switch o.Protocol {
 	case "vmess":
@@ -919,39 +936,29 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 			Enabled:     setting.MuxOn == configure.Yes,
 			Concurrency: setting.Mux,
 		}
-	case "socks":
+	default:
 		supportUDP = false
 	}
 	//根据配置修改端口
-	t.SetInboundPort()
+	t.SetInbound(setting)
 	//设置DNS
-	dohIPs, dohHosts := t.SetDNS(v, supportUDP)
-	//再修改inbounds
-	if setting.Transparent != configure.TransparentClose {
-		var tproxy string
-		if global.SupportTproxy == true {
-			tproxy = "tproxy"
-		} else {
-			tproxy = "redirect"
-		}
-		t.AppendDokodemo(&tproxy, 12345, "transparent")
-	}
+	dohIPs, dohHosts := t.SetDNS(v, supportUDP, setting)
 	//再修改outbounds
 	t.AppendDNSOutbound()
 	//最后是routing
-	serverIPs, serverDomain := t.SetDNSRouting(v, dohIPs, dohHosts)
+	serverIPs, serverDomain := t.SetDNSRouting(v, dohIPs, dohHosts, setting, supportUDP)
 	//添加hosts
 	if len(serverDomain) > 0 && len(serverIPs) > 0 {
 		t.DNS.Hosts[serverDomain] = serverIPs[0]
 	}
 	//PAC端口规则
-	t.SetPacRouting()
+	t.SetPacRouting(setting)
 	//根据是否使用全局代理修改路由
 	if setting.Transparent != configure.TransparentClose {
-		t.SetTransparentRouting()
+		t.SetTransparentRouting(setting)
 	}
 	//置outboundSockopt
-	t.SetOutboundSockopt(supportUDP)
+	t.SetOutboundSockopt(supportUDP, setting)
 
 	return t, &entity.ExtraInfo{
 		DohIps:       dohIPs,
@@ -969,7 +976,7 @@ func (t *Template) ToConfigBytes() []byte {
 func WriteV2rayConfig(content []byte) (err error) {
 	err = ioutil.WriteFile(asset.GetConfigPath(), content, os.FileMode(0600))
 	if err != nil {
-		return errors.New("WriteV2rayConfig: " + err.Error())
+		return newError("WriteV2rayConfig").Base(err)
 	}
 	return
 }
@@ -982,8 +989,8 @@ func NewTemplateFromConfig() (t Template, err error) {
 	err = jsoniter.Unmarshal(b, &t)
 	return
 }
-func (t *Template) AddMappingOutbound(v vmessInfo.VmessInfo, inboundPort string, udpSupport bool, ssrLocalPortIfNeed int, protocol string) (err error) {
-	o, err := ResolveOutbound(&v, "outbound"+inboundPort, ssrLocalPortIfNeed)
+func (t *Template) AddMappingOutbound(v vmessInfo.VmessInfo, inboundPort string, udpSupport bool, pluginPort int, protocol string) (err error) {
+	o, err := ResolveOutbound(&v, "outbound"+inboundPort, &pluginPort)
 	if err != nil {
 		return
 	}
@@ -1000,7 +1007,7 @@ func (t *Template) AddMappingOutbound(v vmessInfo.VmessInfo, inboundPort string,
 	t.Outbounds = append(t.Outbounds, o)
 	iPort, err := strconv.Atoi(inboundPort)
 	if err != nil || iPort <= 0 {
-		return errors.New("port of inbound must be a positive number with string type")
+		return newError("port of inbound must be a positive number with string type")
 	}
 	if protocol == "" {
 		protocol = "socks"

@@ -1,23 +1,25 @@
 package v2ray
 
 import (
-	"V2RayA/common/process/netstat"
-	"V2RayA/core/dnsPoison/entity"
-	"V2RayA/core/shadowsocksr"
-	"V2RayA/core/v2ray/asset"
-	"V2RayA/core/vmessInfo"
-	"V2RayA/global"
-	"V2RayA/persistence/configure"
 	"bytes"
-	"errors"
+	"fmt"
+	netstat2 "github.com/cakturk/go-netstat/netstat"
 	"github.com/json-iterator/go"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"v2rayA/common/netTools/netstat"
+	"v2rayA/common/ntp"
+	"v2rayA/core/dnsPoison/entity"
+	"v2rayA/core/v2ray/asset"
+	"v2rayA/core/vmessInfo"
+	"v2rayA/global"
+	"v2rayA/persistence/configure"
+	"v2rayA/plugins"
 )
 
 func IsV2RayProcessExists() bool {
@@ -53,10 +55,58 @@ func IsV2RayRunning() bool {
 	}
 	return true
 }
+
+func testprint() string {
+	var buffer strings.Builder
+	e, _ := netstat2.TCPSocks(func(entry *netstat2.SockTabEntry) bool {
+		return true
+	})
+	e2, _ := netstat2.TCP6Socks(func(entry *netstat2.SockTabEntry) bool {
+		return true
+	})
+	buffer.WriteString(fmt.Sprintf("%-6v%-25v%-25v%-15v%-6v%-9v%v\n", "Proto", "Local Address", "Foreign Address", "State", "User", "Inode", "PID/Program name"))
+	for _, v := range e {
+		var pstr string
+		if v.Process != nil {
+			pstr = v.Process.String()
+		}
+		buffer.WriteString(fmt.Sprintf(
+			"%-6v%-25v%-25v%-15v%-6v%-9v%v\n",
+			"tcp",
+			v.LocalAddr.IP.String()+"/"+strconv.Itoa(int(v.LocalAddr.Port)),
+			v.RemoteAddr.IP.String()+"/"+strconv.Itoa(int(v.RemoteAddr.Port)),
+			v.State.String(),
+			v.UID,
+			"",
+			pstr,
+		))
+	}
+	for _, v := range e2 {
+		var pstr string
+		if v.Process != nil {
+			pstr = v.Process.String()
+		}
+		buffer.WriteString(fmt.Sprintf(
+			"%-6v%-25v%-25v%-15v%-6v%-9v%v\n",
+			"tcp6",
+			v.LocalAddr.IP.String()+"/"+strconv.Itoa(int(v.LocalAddr.Port)),
+			v.RemoteAddr.IP.String()+"/"+strconv.Itoa(int(v.RemoteAddr.Port)),
+			v.State.String(),
+			v.UID,
+			"",
+			pstr,
+		))
+	}
+	return buffer.String()
+}
+
 func RestartV2rayService() (err error) {
+	if ok, err := ntp.IsDatetimeSynced(); err == nil && !ok {
+		return newError("please sync datetime first")
+	}
 	setting := configure.GetSettingNotNil()
 	if (setting.Transparent == configure.TransparentGfwlist || setting.PacMode == configure.GfwlistMode) && !asset.IsGFWListExists() {
-		return errors.New("cannot find GFWList files. update GFWList and try again")
+		return newError("cannot find GFWList files. update GFWList and try again")
 	}
 	//关闭transparentProxy，防止v2ray在启动DOH时需要解析域名
 	var out []byte
@@ -64,12 +114,12 @@ func RestartV2rayService() (err error) {
 	case global.ServiceMode:
 		out, err = exec.Command("sh", "-c", "service v2ray restart").CombinedOutput()
 		if err != nil {
-			err = errors.New(err.Error() + string(out))
+			err = newError(string(out)).Base(err)
 		}
 	case global.SystemctlMode:
 		out, err = exec.Command("sh", "-c", "systemctl restart v2ray").Output()
 		if err != nil {
-			err = errors.New(err.Error() + string(out))
+			err = newError(string(out)).Base(err)
 		}
 	case global.UniversalMode:
 		_ = killV2ray()
@@ -85,7 +135,7 @@ func RestartV2rayService() (err error) {
 			},
 		})
 		if err != nil {
-			err = errors.New(err.Error() + string(out))
+			err = newError(string(out)).Base(err)
 		}
 	}
 	if err != nil {
@@ -106,15 +156,28 @@ func RestartV2rayService() (err error) {
 	var port int
 	for _, v := range tmplJson.Inbounds {
 		if v.Port != 0 {
+			if v.Settings != nil && v.Settings.Network != "" && !strings.Contains(v.Settings.Network, "tcp") {
+				continue
+			}
 			bPortOpen = true
 			port = v.Port
 			break
 		}
 	}
+	//defer func() {
+	//	log.Println(port)
+	//	log.Println("\n" + netstat.Print([]string{"tcp", "tcp6"}))
+	//	log.Println("\n" + testprint())
+	//}()
 	startTime := time.Now()
 	for {
 		if bPortOpen {
-			if netstat.IsProcessPort("v2ray", port, []string{"tcp", "tcp6"}) {
+			var is bool
+			is, err = netstat.IsProcessListenPort("v2ray", port)
+			if err != nil {
+				return
+			}
+			if is {
 				break
 			}
 		} else {
@@ -123,8 +186,9 @@ func RestartV2rayService() (err error) {
 				break
 			}
 		}
+
 		if time.Since(startTime) > 15*time.Second {
-			return errors.New("v2ray-core does not start normally, there may be a problem with the configuration file or the required port is occupied")
+			return newError("v2ray-core does not start normally, there may be a problem of the configuration file or the required port is occupied")
 		}
 		time.Sleep(1000 * time.Millisecond)
 	}
@@ -138,7 +202,11 @@ func RestartV2rayService() (err error) {
 */
 func UpdateV2RayConfig(v *vmessInfo.VmessInfo) (err error) {
 	CheckAndStopTransparentProxy()
-	defer CheckAndSetupTransparentProxy(true)
+	defer func() {
+		if e := CheckAndSetupTransparentProxy(true); err == nil && e != nil {
+			err = e
+		}
+	}()
 	//iptables.SpoofingFilter.GetCleanCommands().Clean()
 	//defer iptables.SpoofingFilter.GetSetupCommands().Setup(nil)
 	//读配置，转换为v2ray配置并写入
@@ -169,37 +237,33 @@ func UpdateV2RayConfig(v *vmessInfo.VmessInfo) (err error) {
 		return
 	}
 
-	global.SSRs.ClearAll()
+	global.Plugins.CloseAll()
 	entity.StopDNSPoison()
 
 	if v == nil && !IsV2RayRunning() {
 		//没有运行就不需要重新启动了
 		return
 	}
+	if v == nil {
+		v = &sr.VmessInfo
+	}
 	err = RestartV2rayService()
 	if err != nil {
 		return
 	}
-	if len(tmpl.Outbounds) > 0 && tmpl.Outbounds[0].Protocol == "socks" {
-		//说明是ss或ssr，启动ssr server
-		// 尝试将address解析成ip
-		if v == nil {
-			v = &sr.VmessInfo
-		}
-		if net.ParseIP(v.Add) == nil {
-			addrs, e := net.LookupHost(v.Add)
-			if e == nil && len(addrs) > 0 {
-				v.Add = addrs[0]
-			}
-		}
-		ss := new(shadowsocksr.SSR)
-		err = ss.Serve(global.GetEnvironmentConfig().SSRListenPort, v.Net, v.ID, v.Add, v.Port, v.TLS, v.Path, v.Type, v.Host)
+	if v.Protocol != "" && v.Protocol != "vmess" {
+		// 说明是plugin，启动plugin client
+		var plugin plugins.Plugin
+		plugin, err = plugins.NewPlugin(global.GetEnvironmentConfig().PluginListenPort, *v)
 		if err != nil {
 			return
 		}
-		global.SSRs.Append(*ss)
+		global.Plugins.Append(plugin)
 	}
-	if configure.GetSettingNotNil().Transparent != configure.TransparentClose && !global.SupportTproxy {
+	if setting := configure.GetSettingNotNil();
+		setting.Transparent != configure.TransparentClose &&
+			setting.AntiPollution != configure.AntipollutionClosed &&
+			(!global.SupportTproxy || setting.EnhancedMode) {
 		//redirect+poison增强方案
 		entity.SetupDnsPoisonWithExtraInfo(extraInfo)
 	}
@@ -254,7 +318,7 @@ func StopV2rayService() (err error) {
 			if err != nil && len(strings.TrimSpace(err.Error())) > 0 {
 				msg += ": " + err.Error()
 			}
-			err = errors.New(msg)
+			err = newError(msg)
 		}
 	}()
 	var out []byte
@@ -264,12 +328,12 @@ func StopV2rayService() (err error) {
 	case global.ServiceMode:
 		out, err = exec.Command("sh", "-c", "service v2ray stop").CombinedOutput()
 		if err != nil {
-			err = errors.New(err.Error() + string(out))
+			err = newError(string(out)).Base(err)
 		}
 	case global.SystemctlMode:
 		out, err = exec.Command("sh", "-c", "systemctl stop v2ray").CombinedOutput()
 		if err != nil {
-			err = errors.New(err.Error() + string(out))
+			err = newError(string(out)).Base(err)
 		}
 	}
 	return

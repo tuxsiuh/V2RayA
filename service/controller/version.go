@@ -1,12 +1,12 @@
 package controller
 
 import (
-	"V2RayA/global"
-	"V2RayA/core/gfwlist"
-	"V2RayA/core/v2ray"
-	"V2RayA/common"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"v2rayA/common"
+	"v2rayA/core/v2ray"
+	"v2rayA/core/v2ray/asset/gfwlist"
+	"v2rayA/global"
 )
 
 func GetVersion(ctx *gin.Context) {
@@ -29,7 +29,7 @@ func GetVersion(ctx *gin.Context) {
 		"remoteVersion": global.RemoteVersion,
 		"serviceValid":  v2ray.IsV2rayServiceValid(),
 		"dohValid":      dohValid,
-		"iptablesMode":  iptablesMode,
+		"iptablesMode":  iptablesMode, //仅代表是否支持tproxy，真实iptables所使用的表还要看是否是增强模式
 	})
 }
 
@@ -41,7 +41,7 @@ func GetRemoteGFWListVersion(ctx *gin.Context) {
 	//}
 	g, err := gfwlist.GetRemoteGFWListUpdateTime(http.DefaultClient)
 	if err != nil {
-		common.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
 	common.ResponseSuccess(ctx, gin.H{"remoteGFWListVersion": g.UpdateTime.Local().Format("2006-01-02")})

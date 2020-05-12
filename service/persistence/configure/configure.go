@@ -1,12 +1,11 @@
 package configure
 
 import (
-	"V2RayA/global"
-	"V2RayA/core/ipforward"
-	"V2RayA/persistence"
+	"v2rayA/core/ipforward"
+	"v2rayA/global"
+	"v2rayA/persistence"
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -36,6 +35,7 @@ func New() *Configure {
 			Http:        20171,
 			HttpWithPac: 20172,
 		},
+		Accounts: map[string]string{},
 	}
 }
 func decode(b []byte) (result []byte) {
@@ -158,7 +158,8 @@ func GetDohListNotNil() *string {
 	_ = persistence.Get("dohList", &r)
 	if len(strings.TrimSpace(*r)) == 0 {
 		*r = `https://dns.alidns.com/dns-query
-https://dns.rubyfish.cn/dns-query`
+https://dns.rubyfish.cn/dns-query
+https://doh.360.cn/dns-query`
 	}
 	return r
 }
@@ -223,7 +224,7 @@ func SetAccount(username, password string) (err error) {
 	return persistence.Set(path, password)
 }
 func ResetAccounts() (err error) {
-	return persistence.Set("accounts", nil)
+	return persistence.Set("accounts", map[string]string{})
 }
 func ExistsAccount(username string) bool {
 	return persistence.Exists(fmt.Sprintf("accounts.%s", username))
@@ -232,7 +233,7 @@ func ExistsAccount(username string) bool {
 func GetPasswordOfAccount(username string) (pwd string, err error) {
 	path := fmt.Sprintf("accounts.%s", username)
 	if !persistence.Exists(path) {
-		return "", errors.New("username not exists")
+		return "", newError("username not exists")
 	}
 	err = persistence.Get(path, &pwd)
 	return

@@ -1,15 +1,15 @@
 package controller
 
 import (
-	"V2RayA/core/gfwlist"
-	"V2RayA/common"
+	"v2rayA/common"
+	"v2rayA/core/v2ray/asset/gfwlist"
 	"github.com/gin-gonic/gin"
 )
 
 func PutGFWList(ctx *gin.Context) {
 	localGFWListVersion, err := gfwlist.CheckAndUpdateGFWList()
 	if err != nil {
-		common.ResponseError(ctx, err)
+		common.ResponseError(ctx, logError(err))
 		return
 	}
 	common.ResponseSuccess(ctx, gin.H{

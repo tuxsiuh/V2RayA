@@ -1,9 +1,9 @@
 package iptables
 
 import (
-	"V2RayA/common"
-	"V2RayA/common/cmds"
 	"strings"
+	"v2rayA/common"
+	"v2rayA/common/cmds"
 )
 
 // http://briteming.hatenablog.com/entry/2019/06/18/175518

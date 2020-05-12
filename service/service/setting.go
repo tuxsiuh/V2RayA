@@ -1,11 +1,10 @@
 package service
 
 import (
-	"V2RayA/core/ipforward"
-	"V2RayA/core/v2ray"
-	"V2RayA/core/v2ray/asset"
-	"V2RayA/persistence/configure"
-	"errors"
+	"v2rayA/core/ipforward"
+	"v2rayA/core/v2ray"
+	"v2rayA/core/v2ray/asset"
+	"v2rayA/persistence/configure"
 )
 
 func GetSetting() *configure.Setting {
@@ -19,7 +18,7 @@ func GetSetting() *configure.Setting {
 
 func UpdateSetting(setting *configure.Setting) (err error) {
 	if (setting.Transparent == configure.TransparentGfwlist || setting.PacMode == configure.GfwlistMode) && !asset.IsGFWListExists() {
-		return errors.New("cannot find GFWList files. update GFWList and try again")
+		return newError("cannot find GFWList files. update GFWList and try again")
 	}
 	if setting.Transparent != configure.TransparentClose {
 		if setting.IpForward != ipforward.IsIpForwardOn() {

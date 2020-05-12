@@ -1,18 +1,6 @@
 package main
 
 import (
-	"V2RayA/common/ports"
-	"V2RayA/core/gfwlist"
-	"V2RayA/core/ipforward"
-	"V2RayA/core/iptables"
-	"V2RayA/core/v2ray"
-	"V2RayA/core/v2ray/asset"
-	"V2RayA/extra/gopeed"
-	"V2RayA/global"
-	"V2RayA/persistence/configure"
-	"V2RayA/router"
-	"V2RayA/service"
-	"errors"
 	"fmt"
 	"github.com/gookit/color"
 	jsonIteratorExtra "github.com/json-iterator/go/extra"
@@ -30,12 +18,60 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"v2ray.com/core/common/errors"
+	"v2rayA/common/netTools/ports"
+	"v2rayA/core/ipforward"
+	"v2rayA/core/iptables"
+	"v2rayA/core/v2ray"
+	"v2rayA/core/v2ray/asset"
+	"v2rayA/core/v2ray/asset/gfwlist"
+	"v2rayA/extra/gopeed"
+	"v2rayA/global"
+	"v2rayA/persistence/configure"
+	"v2rayA/router"
+	"v2rayA/service"
 )
 
-func testTproxy() {
+func checkEnvironment() {
+	if runtime.GOOS == "windows" {
+		fmt.Println("v2rayA cannot run on windows")
+		fmt.Println("Press any key to continue...")
+		_, _ = fmt.Scanf("\n")
+		os.Exit(1)
+	}
+	conf := global.GetEnvironmentConfig()
+	if !conf.PassCheckRoot || conf.ResetPassword {
+		if os.Getegid() != 0 {
+			log.Fatal("Please execute this program with sudo or as a root user. If you are sure that you have root privileges, you can use the --passcheckroot parameter to skip the check")
+		}
+	}
+	if conf.ResetPassword {
+		err := configure.ResetAccounts()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("ok")
+		os.Exit(0)
+	}
+	_, port, err := net.SplitHostPort(conf.Address)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if occupied, socket, err := ports.IsPortOccupied([]string{port + ":tcp"}); occupied {
+		if err != nil {
+			log.Fatal("netstat:", err)
+		}
+		process, err := socket.Process()
+		if err == nil {
+			log.Fatalf("Port %v is occupied by %v/%v", port, process.Name, process.PID)
+		}
+	}
+}
+
+func checkTProxySupportability() {
 	//检查tproxy是否可以启用
 	if err := v2ray.CheckAndProbeTProxy(); err != nil {
-		log.Println("无法启用TPROXY模块:", err)
+		log.Println("[INFO] Cannot load TPROXY module:", err, ". Switch to DNSPoison module")
 	}
 	v2ray.CheckAndStopTransparentProxy()
 	preprocess := func(c *iptables.SetupCommands) {
@@ -56,39 +92,6 @@ func testTproxy() {
 		global.SupportTproxy = false
 	}
 	iptables.Tproxy.GetCleanCommands().Clean()
-}
-func checkEnvironment() {
-	if runtime.GOOS == "windows" {
-		fmt.Println("windows不支持直接运行，请配合docker使用。见https://github.com/mzz2017/V2RayA")
-		fmt.Println("请按任意键继续...")
-		_, _ = fmt.Scanf("\n")
-		os.Exit(1)
-	}
-	conf := global.GetEnvironmentConfig()
-	if !conf.PassCheckRoot || conf.ResetPassword {
-		if os.Getegid() != 0 {
-			log.Fatal("请以sudo或root权限执行本程序. 如您确信已sudo或已拥有root权限, 可使用--passcheckroot参数跳过检查")
-		}
-	}
-	if conf.ResetPassword {
-		err := configure.ResetAccounts()
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println("ok")
-		os.Exit(0)
-	}
-	_, port, err := net.SplitHostPort(conf.Address)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if occupied, socket := ports.IsPortOccupied([]string{port + ":tcp"}); occupied {
-		process, err := socket.Process()
-		if err == nil {
-			log.Fatalf("V2RayA启动失败，%v端口已被%v/%v占用", port, process.Name, process.PID)
-		}
-	}
-	testTproxy()
 }
 
 func initConfigure() {
@@ -121,7 +124,7 @@ func initConfigure() {
 	//检查geoip、geosite是否存在
 	if !asset.IsGeoipExists() || !asset.IsGeositeExists() {
 		dld := func(repo, filename, localname string) (err error) {
-			color.Red.Println("正在安装" + filename)
+			color.Red.Println("installing" + filename)
 			p := asset.GetV2rayLocationAsset() + "/" + filename
 			resp, err := http.Get("https://api.github.com/repos/" + repo + "/tags")
 			if err != nil {
@@ -179,71 +182,78 @@ func hello() {
 	wd, _ := asset.GetV2rayWorkingDir()
 	color.Red.Println("V2Ray binary is at", wd+"/v2ray")
 	wd, _ = os.Getwd()
-	color.Red.Println("V2RayA working directory is", wd)
+	color.Red.Println("v2rayA working directory is", wd)
 	color.Red.Println("Version:", global.Version)
 }
 
 func checkUpdate() {
-	go func() {
-		//等待网络连通
-		for {
-			c := http.DefaultClient
-			c.Timeout = 5 * time.Second
-			resp, err := http.Get("http://www.gstatic.com/generate_204")
-			if err == nil {
-				_ = resp.Body.Close()
-				break
-			}
-			time.Sleep(c.Timeout)
+	//等待网络连通
+	for {
+		c := http.DefaultClient
+		c.Timeout = 5 * time.Second
+		resp, err := http.Get("http://www.gstatic.com/generate_204")
+		if err == nil {
+			_ = resp.Body.Close()
+			break
 		}
+		time.Sleep(c.Timeout)
+	}
 
-		setting := service.GetSetting()
-		//检查PAC文件更新
-		if setting.PacAutoUpdateMode == configure.AutoUpdate || setting.Transparent == configure.TransparentGfwlist {
-			switch setting.PacMode {
-			case configure.GfwlistMode:
-				go func() {
-					/* 更新LoyalsoldierSite.dat */
-					localGFWListVersion, err := gfwlist.CheckAndUpdateGFWList()
-					if err != nil {
-						log.Println("自动更新PAC文件失败" + err.Error())
-						return
-					}
-					log.Println("自动更新PAC文件完成，本地文件时间：" + localGFWListVersion)
-				}()
-			case configure.CustomMode:
-				//TODO
-			}
-		}
-
-		//检查订阅更新
-		if setting.SubscriptionAutoUpdateMode == configure.AutoUpdate {
+	setting := service.GetSetting()
+	//检查PAC文件更新
+	if setting.PacAutoUpdateMode == configure.AutoUpdate || setting.Transparent == configure.TransparentGfwlist {
+		switch setting.PacMode {
+		case configure.GfwlistMode:
 			go func() {
-				subs := configure.GetSubscriptions()
-				lenSubs := len(subs)
-				control := make(chan struct{}, 2) //并发限制同时更新2个订阅
-				wg := new(sync.WaitGroup)
-				for i := 0; i < lenSubs; i++ {
-					wg.Add(1)
-					go func(i int) {
-						control <- struct{}{}
-						err := service.UpdateSubscription(i, false)
-						if err != nil {
-							log.Println(fmt.Sprintf("自动更新订阅失败，id: %d，err: %v", i, err.Error()))
-						} else {
-							log.Println(fmt.Sprintf("自动更新订阅成功，id: %d，地址: %s", i, subs[i].Address))
-						}
-						wg.Done()
-						<-control
-					}(i)
+				/* 更新LoyalsoldierSite.dat */
+				localGFWListVersion, err := gfwlist.CheckAndUpdateGFWList()
+				if err != nil {
+					log.Println("Fail in updating PAC file: " + err.Error())
+					return
 				}
-				wg.Wait()
+				log.Println("Complete updating PAC file. Localtime: " + localGFWListVersion)
 			}()
+		case configure.CustomMode:
+			//TODO
 		}
-		// 检查服务端更新
-		if foundNew, remote, err := service.CheckUpdate(); err == nil {
-			global.FoundNew = foundNew
-			global.RemoteVersion = remote
+	}
+
+	//检查订阅更新
+	if setting.SubscriptionAutoUpdateMode == configure.AutoUpdate {
+		go func() {
+			subs := configure.GetSubscriptions()
+			lenSubs := len(subs)
+			control := make(chan struct{}, 2) //并发限制同时更新2个订阅
+			wg := new(sync.WaitGroup)
+			for i := 0; i < lenSubs; i++ {
+				wg.Add(1)
+				go func(i int) {
+					control <- struct{}{}
+					err := service.UpdateSubscription(i, false)
+					if err != nil {
+						log.Println(fmt.Sprintf("Fail in updating subscription -- ID: %d，err: %v", i, err.Error()))
+					} else {
+						log.Println(fmt.Sprintf("Complete updating subscription -- ID: %d，地址: %s", i, subs[i].Address))
+					}
+					wg.Done()
+					<-control
+				}(i)
+			}
+			wg.Wait()
+		}()
+	}
+	// 检查服务端更新
+	go func() {
+		f := func() {
+			if foundNew, remote, err := service.CheckUpdate(); err == nil {
+				global.FoundNew = foundNew
+				global.RemoteVersion = remote
+			}
+		}
+		f()
+		c := time.Tick(7 * 24 * time.Hour)
+		for range c {
+			f()
 		}
 	}()
 }
