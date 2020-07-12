@@ -1,13 +1,16 @@
 package entity
 
 import (
-	"v2rayA/common/netTools"
-	"v2rayA/core/dnsPoison"
-	"v2rayA/core/v2ray/asset"
 	"log"
+	"os/exec"
 	"sync"
 	"time"
 	"v2ray.com/core/app/router"
+	"github.com/mzz2017/v2rayA/common/netTools"
+	"github.com/mzz2017/v2rayA/core/dnsPoison"
+	"github.com/mzz2017/v2rayA/core/v2ray/asset"
+	"github.com/mzz2017/v2rayA/global"
+	"github.com/mzz2017/v2rayA/db/configure"
 )
 
 var (
@@ -17,6 +20,7 @@ var (
 	limit             = make(chan interface{}, 1)
 	whiteDnsServerIps []*router.CIDR
 	whiteDomains      []*router.Domain
+	wg                sync.WaitGroup
 )
 
 type ExtraInfo struct {
@@ -26,7 +30,21 @@ type ExtraInfo struct {
 	ServerDomain string
 }
 
-func SetupDnsPoisonWithExtraInfo(info *ExtraInfo) {
+func ShouldDnsPoisonOpen() bool {
+	if setting := configure.GetSettingNotNil();
+		!(setting.Transparent != configure.TransparentClose &&
+			setting.AntiPollution != configure.AntipollutionClosed &&
+			(!global.SupportTproxy || setting.EnhancedMode)) {
+		//redirect+poison增强方案
+		return false
+	}
+	return true
+}
+
+func CheckAndSetupDnsPoisonWithExtraInfo(info *ExtraInfo) {
+	if !ShouldDnsPoisonOpen() {
+		return
+	}
 	whitedms := make([]*router.Domain, 0, len(info.DohDomains))
 	for _, h := range info.DohDomains {
 		whitedms = append(whitedms, &router.Domain{
@@ -43,11 +61,23 @@ func SetupDnsPoisonWithExtraInfo(info *ExtraInfo) {
 	whitedms = append(whitedms, &router.Domain{
 		Type:  router.Domain_Domain,
 		Value: "v2raya.mzz.pub",
+	}, &router.Domain{
+		Type:  router.Domain_Domain,
+		Value: "v.mzz.pub",
+	}, &router.Domain{
+		Type:  router.Domain_Domain,
+		Value: "github.com",
+	}, &router.Domain{
+		Type:  router.Domain_Domain,
+		Value: "1password.com",
+	}, &router.Domain{
+		Type:  router.Domain_Regex,
+		Value: `^dns\.`,
+	}, &router.Domain{
+		Type:  router.Domain_Regex,
+		Value: `^doh\.`,
 	})
-	_ = StartDNSPoison([]*router.CIDR{
-		{Ip: []byte{119, 29, 29, 29}, Prefix: 32},
-		{Ip: []byte{114, 114, 114, 114}, Prefix: 32},
-	},
+	_ = StartDNSPoison(nil,
 		whitedms)
 }
 
@@ -108,7 +138,8 @@ func StartDNSPoison(externWhiteDnsServers []*router.CIDR, externWhiteDomains []*
 				}
 				//准备白名单
 				log.Println("DnsPoison: preparing whitelist")
-				_, wlDms, err := asset.GetWhitelistCn(nil, whiteDomains)
+				wlDms, err := asset.GetWhitelistCn(nil, whiteDomains)
+				//var wlDms = new(strmatcher.MatcherGroup)
 				if err != nil {
 					log.Println("StartDNSPoisonConroutine:", err)
 					return
@@ -123,6 +154,8 @@ func StartDNSPoison(externWhiteDnsServers []*router.CIDR, externWhiteDomains []*
 							return
 						}
 						go func(ifname string) {
+							wg.Add(1)
+							defer wg.Done()
 							err = poison.Run(ifname, ipMatcher, wlDms)
 							if err != nil {
 								log.Println("StartDNSPoisonConroutine["+ifname+"]:", err)
@@ -154,5 +187,16 @@ func StopDNSPoison() {
 		default:
 			close(done)
 		}
+	}
+	wg.Wait()
+	clearDNSCache()
+}
+
+func clearDNSCache() {
+	switch global.ServiceControlMode {
+	case global.ServiceMode:
+		_, _ = exec.Command("sh -c", "service nscd restart").Output()
+	case global.SystemctlMode:
+		_, _ = exec.Command("sh -c", "systemctl restart nscd").Output()
 	}
 }

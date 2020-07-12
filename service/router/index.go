@@ -4,11 +4,11 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gookit/color"
-	"v2rayA/common"
-	"v2rayA/common/jwt"
-	"v2rayA/controller"
-	"v2rayA/global"
-	"v2rayA/persistence/configure"
+	"github.com/mzz2017/v2rayA/common"
+	"github.com/mzz2017/v2rayA/common/jwt"
+	"github.com/mzz2017/v2rayA/controller"
+	"github.com/mzz2017/v2rayA/global"
+	"github.com/mzz2017/v2rayA/db/configure"
 )
 
 func Run() error {
@@ -69,6 +69,8 @@ func Run() error {
 		auth.POST("portWhiteList", controller.PostPortWhiteList)
 		auth.GET("dohList", controller.GetDohList)
 		auth.PUT("dohList", controller.PutDohList)
+		auth.GET("dnsList", controller.GetDnsList)
+		auth.PUT("dnsList", controller.PutDnsList)
 		auth.GET("siteDatFiles", controller.GetSiteDatFiles)
 		auth.GET("customPac", controller.GetCustomPac)
 		auth.PUT("customPac", controller.PutCustomPac)
@@ -77,6 +79,7 @@ func Run() error {
 	}
 	color.Red.Println("v2rayA is running at", global.GetEnvironmentConfig().Address)
 	color.Red.Println("GUI demo: https://v2raya.mzz.pub")
+	color.Red.Println("GUI demo: http://v.mzz.pub")
 	app := global.GetEnvironmentConfig()
 	return engine.Run(app.Address)
 }

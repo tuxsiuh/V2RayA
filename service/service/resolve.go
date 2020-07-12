@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"v2rayA/common"
-	"v2rayA/core/nodeData"
-	"v2rayA/core/vmessInfo"
+	"github.com/mzz2017/v2rayA/common"
+	"github.com/mzz2017/v2rayA/core/nodeData"
+	"github.com/mzz2017/v2rayA/core/vmessInfo"
 )
 
 /*
@@ -23,6 +23,9 @@ func ResolveVmessURL(vmess string) (data *nodeData.NodeData, err error) {
 	// 进行base64解码，并unmarshal到VmessInfo上
 	raw, err := common.Base64StdDecode(vmess[8:])
 	if err != nil {
+		raw, err = common.Base64URLDecode(vmess[8:])
+	}
+	if err != nil {
 		// 不是json格式，尝试以vmess://BASE64(Security:ID@Add:Port)?remarks=Ps&obfsParam=Host&Path=Path&obfs=Net&tls=TLS解析
 		var u *url.URL
 		u, err = url.Parse(vmess)
@@ -32,6 +35,9 @@ func ResolveVmessURL(vmess string) (data *nodeData.NodeData, err error) {
 		re := regexp.MustCompile(`.*:(.+)@(.+):(\d+)`)
 		s := strings.Split(vmess[8:], "?")[0]
 		s, err = common.Base64StdDecode(s)
+		if err != nil {
+			s, err = common.Base64URLDecode(s)
+		}
 		subMatch := re.FindStringSubmatch(s)
 		if subMatch == nil {
 			err = newError("unrecognized vmess address")
@@ -263,7 +269,6 @@ func ResolveTrojanURL(u string) (data *nodeData.NodeData, err error) {
 		AllowInsecure: allowInsecure == "1" || allowInsecure == "true",
 		Protocol:      "trojan",
 	}
-	log.Println(data.VmessInfo)
 	return
 }
 func ResolvePingTunnelURL(u string) (data *nodeData.NodeData, err error) {
@@ -275,7 +280,7 @@ func ResolvePingTunnelURL(u string) (data *nodeData.NodeData, err error) {
 	u, err = common.Base64StdDecode(u)
 	if err != nil {
 		log.Println(u)
-		err = newError(err)
+		err = newError().Base(err)
 		return
 	}
 	arr := strings.Split(u, "#")
@@ -293,7 +298,7 @@ func ResolvePingTunnelURL(u string) (data *nodeData.NodeData, err error) {
 	passwd, err := common.Base64URLDecode(subMatch[2])
 	if err != nil {
 		log.Println(subMatch[2])
-		err = newError(err)
+		err = newError().Base(err)
 		return
 	}
 	data.VmessInfo = vmessInfo.VmessInfo{

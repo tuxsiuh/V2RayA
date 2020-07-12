@@ -1,21 +1,22 @@
 package shadowsocksr
 
 import (
-	"v2rayA/common/netTools/ports"
-	"v2rayA/core/vmessInfo"
-	"v2rayA/extra/proxy/socks5"
-	"v2rayA/extra/proxy/ssr"
-	"v2rayA/plugins"
 	"fmt"
 	"log"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"github.com/mzz2017/v2rayA/common/netTools/ports"
+	"github.com/mzz2017/v2rayA/core/vmessInfo"
+	"github.com/mzz2017/v2rayA/extra/proxy/socks5"
+	"github.com/mzz2017/v2rayA/extra/proxy/ssr"
+	"github.com/mzz2017/v2rayA/plugin"
 )
 
 type SSR struct {
-	c         chan struct{}
+	c         chan interface{}
+	closed    chan interface{}
 	localPort int
 }
 type Params struct {
@@ -23,20 +24,21 @@ type Params struct {
 }
 
 func init() {
-	plugins.RegisterPlugin("ss", NewSSRPlugin)
-	plugins.RegisterPlugin("ssr", NewSSRPlugin)
-	plugins.RegisterPlugin("shadowsocks", NewSSRPlugin)
-	plugins.RegisterPlugin("shadowsocksr", NewSSRPlugin)
+	plugin.RegisterPlugin("ss", NewSSRPlugin)
+	plugin.RegisterPlugin("ssr", NewSSRPlugin)
+	plugin.RegisterPlugin("shadowsocks", NewSSRPlugin)
+	plugin.RegisterPlugin("shadowsocksr", NewSSRPlugin)
 }
 
-func NewSSRPlugin(localPort int, v vmessInfo.VmessInfo) (plugin plugins.Plugin, err error) {
+func NewSSRPlugin(localPort int, v vmessInfo.VmessInfo) (plugin plugin.Plugin, err error) {
 	plugin = new(SSR)
 	err = plugin.Serve(localPort, v)
 	return
 }
 
 func (self *SSR) Serve(localPort int, v vmessInfo.VmessInfo) (err error) {
-	self.c = make(chan struct{}, 0)
+	self.c = make(chan interface{}, 0)
+	self.closed = make(chan interface{}, 0)
 	self.localPort = localPort
 	params := Params{
 		Cipher:        v.Net,
@@ -85,6 +87,7 @@ func (self *SSR) Serve(localPort int, v vmessInfo.VmessInfo) (err error) {
 		}()
 		<-self.c
 		if local.(*socks5.Socks5).TcpListener != nil {
+			close(self.closed)
 			_ = local.(*socks5.Socks5).TcpListener.Close()
 		}
 	}()
@@ -100,11 +103,17 @@ func (self *SSR) Close() error {
 	if len(self.c) > 0 {
 		return newError("close fail: duplicate close")
 	}
-	self.c <- struct{}{}
+	self.c <- nil
 	self.c = nil
 	time.Sleep(100 * time.Millisecond)
 	start := time.Now()
+out:
 	for {
+		select {
+		case <-self.closed:
+			break out
+		default:
+		}
 		var o bool
 		o, _, err := ports.IsPortOccupied([]string{strconv.Itoa(self.localPort) + ":tcp"})
 		if err != nil {

@@ -4,13 +4,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/json-iterator/go"
 	"time"
-	"v2rayA/common"
-	"v2rayA/persistence/configure"
-	"v2rayA/service"
+	"github.com/mzz2017/v2rayA/common"
+	"github.com/mzz2017/v2rayA/db/configure"
+	"github.com/mzz2017/v2rayA/service"
 )
 
 func GetPingLatency(ctx *gin.Context) {
-	var wt []configure.Which
+	var wt []*configure.Which
 	err := jsoniter.Unmarshal([]byte(ctx.Query("whiches")), &wt)
 	if err != nil {
 		common.ResponseError(ctx, logError(nil, "bad request"))
@@ -27,13 +27,13 @@ func GetPingLatency(ctx *gin.Context) {
 }
 
 func GetHttpLatency(ctx *gin.Context) {
-	var wt []configure.Which
+	var wt []*configure.Which
 	err := jsoniter.Unmarshal([]byte(ctx.Query("whiches")), &wt)
 	if err != nil {
 		common.ResponseError(ctx, logError(nil, "bad request"))
 		return
 	}
-	wt, err = service.TestHttpLatency(wt, 8*time.Second, 4)
+	wt, err = service.TestHttpLatency(wt, 8*time.Second, 4, false)
 	if err != nil {
 		common.ResponseError(ctx, logError(err))
 		return

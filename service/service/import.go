@@ -1,13 +1,13 @@
 package service
 
 import (
-	"v2rayA/common/httpClient"
-	"v2rayA/core/nodeData"
-	"v2rayA/core/touch"
-	"v2rayA/core/v2ray"
-	"v2rayA/persistence/configure"
 	"strings"
 	"time"
+	"github.com/mzz2017/v2rayA/common/httpClient"
+	"github.com/mzz2017/v2rayA/core/nodeData"
+	"github.com/mzz2017/v2rayA/core/touch"
+	"github.com/mzz2017/v2rayA/core/v2ray"
+	"github.com/mzz2017/v2rayA/db/configure"
 )
 
 func Import(url string, which *configure.Which) (err error) {
@@ -42,7 +42,7 @@ func Import(url string, which *configure.Which) (err error) {
 		} else {
 			//新建
 			//后端NodeData转前端TouchServerRaw压入TouchRaw.Servers
-			err = configure.AppendServer(n.ToServerRaw())
+			err = configure.AppendServers([]*configure.ServerRaw{n.ToServerRaw()})
 		}
 	} else {
 		//不是ss://也不是vmess://，有可能是订阅地址
@@ -56,7 +56,7 @@ func Import(url string, which *configure.Which) (err error) {
 		c.Timeout = 90 * time.Second
 		infos, err := ResolveSubscriptionWithClient(url, c)
 		if err != nil {
-			return newError("fail in resolving subscription address").Base(err)
+			return newError("failed to resolve subscription address").Base(err)
 		}
 		//后端NodeData转前端TouchServerRaw压入TouchRaw.Subscriptions.Servers
 		servers := make([]configure.ServerRaw, len(infos))
@@ -75,11 +75,11 @@ func Import(url string, which *configure.Which) (err error) {
 				delete(unique, s)
 			}
 		}
-		err = configure.AppendSubscription(&configure.SubscriptionRaw{
+		err = configure.AppendSubscriptions([]*configure.SubscriptionRaw{{
 			Address: url,
 			Status:  string(touch.NewUpdateStatus()),
 			Servers: uniqueServers,
-		})
+		}})
 	}
 	return
 }

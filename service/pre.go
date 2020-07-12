@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/gookit/color"
+	jsoniter "github.com/json-iterator/go"
 	jsonIteratorExtra "github.com/json-iterator/go/extra"
 	"github.com/tidwall/gjson"
 	"io/ioutil"
@@ -19,17 +20,18 @@ import (
 	"syscall"
 	"time"
 	"v2ray.com/core/common/errors"
-	"v2rayA/common/netTools/ports"
-	"v2rayA/core/ipforward"
-	"v2rayA/core/iptables"
-	"v2rayA/core/v2ray"
-	"v2rayA/core/v2ray/asset"
-	"v2rayA/core/v2ray/asset/gfwlist"
-	"v2rayA/extra/gopeed"
-	"v2rayA/global"
-	"v2rayA/persistence/configure"
-	"v2rayA/router"
-	"v2rayA/service"
+	"github.com/mzz2017/v2rayA/common/netTools/ports"
+	"github.com/mzz2017/v2rayA/core/ipforward"
+	"github.com/mzz2017/v2rayA/core/iptables"
+	"github.com/mzz2017/v2rayA/core/v2ray"
+	"github.com/mzz2017/v2rayA/core/v2ray/asset"
+	"github.com/mzz2017/v2rayA/core/v2ray/asset/gfwlist"
+	"github.com/mzz2017/v2rayA/db"
+	"github.com/mzz2017/v2rayA/db/configure"
+	"github.com/mzz2017/v2rayA/extra/gopeed"
+	"github.com/mzz2017/v2rayA/global"
+	"github.com/mzz2017/v2rayA/router"
+	"github.com/mzz2017/v2rayA/service"
 )
 
 func checkEnvironment() {
@@ -94,19 +96,65 @@ func checkTProxySupportability() {
 	iptables.Tproxy.GetCleanCommands().Clean()
 }
 
+func migrate(jsonConfPath string) (err error) {
+	log.Println("[info] Migrating json to nutsdb...")
+	defer func() {
+		if err != nil {
+			log.Println("[info] Migrating failed: ", err.Error())
+		} else {
+			log.Println("[info] Migrating complete")
+		}
+	}()
+	b, err := ioutil.ReadFile(jsonConfPath)
+	if err != nil {
+		return
+	}
+	var cfg configure.Configure
+	if err = jsoniter.Unmarshal(b, &cfg); err != nil {
+		return
+	}
+	if err = configure.SetConfigure(&cfg); err != nil {
+		return
+	}
+	return nil
+}
+
+func initDBValue() {
+	err := configure.SetConfigure(configure.New())
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func initConfigure() {
 	//初始化配置
 	jsonIteratorExtra.RegisterFuzzyDecoders()
 	// Enable line numbers in logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
+	//db
+	confPath := global.GetEnvironmentConfig().Config
+	if _, err := os.Stat(confPath); os.IsNotExist(err) {
+		_ = os.MkdirAll(path.Dir(confPath), os.ModeDir|0750)
+	}
 	if configure.IsConfigureNotExists() {
-		_ = os.MkdirAll(path.Dir(global.GetEnvironmentConfig().Config), os.ModeDir|0755)
-		err := configure.SetConfigure(configure.New())
-		if err != nil {
-			log.Fatal(err)
+		// need to migrate?
+		camp := []string{path.Join(path.Dir(confPath), "v2raya.json"), "/etc/v2ray/v2raya.json", "/etc/v2raya/v2raya.json"}
+		var ok bool
+		for _, jsonConfPath := range camp {
+			if _, err := os.Stat(jsonConfPath); err == nil {
+				err = migrate(jsonConfPath)
+				if err == nil {
+					ok = true
+					break
+				}
+			}
+		}
+		if !ok {
+			initDBValue()
 		}
 	}
+
 	//配置文件描述符上限
 	if global.ServiceControlMode == global.ServiceMode || global.ServiceControlMode == global.SystemctlMode {
 		err := v2ray.OptimizeServiceFile()
@@ -208,7 +256,7 @@ func checkUpdate() {
 				/* 更新LoyalsoldierSite.dat */
 				localGFWListVersion, err := gfwlist.CheckAndUpdateGFWList()
 				if err != nil {
-					log.Println("Fail in updating PAC file: " + err.Error())
+					log.Println("Failed to update PAC file: " + err.Error())
 					return
 				}
 				log.Println("Complete updating PAC file. Localtime: " + localGFWListVersion)
@@ -231,7 +279,7 @@ func checkUpdate() {
 					control <- struct{}{}
 					err := service.UpdateSubscription(i, false)
 					if err != nil {
-						log.Println(fmt.Sprintf("Fail in updating subscription -- ID: %d，err: %v", i, err.Error()))
+						log.Println(fmt.Sprintf("Failed to update subscription -- ID: %d，err: %v", i, err.Error()))
 					} else {
 						log.Println(fmt.Sprintf("Complete updating subscription -- ID: %d，地址: %s", i, subs[i].Address))
 					}
@@ -267,7 +315,7 @@ func run() (err error) {
 	err = v2ray.UpdateV2RayConfig(nil)
 	if err != nil {
 		w := configure.GetConnectedServer()
-		log.Println("which:", w)
+		log.Println(err, ", which:", w)
 		_ = configure.ClearConnected()
 	}
 	errch := make(chan error)
@@ -283,10 +331,11 @@ func run() (err error) {
 		errch <- nil
 	}()
 	if err = <-errch; err != nil {
-		return
+		log.Fatal(err)
 	}
 	fmt.Println("Quitting...")
 	v2ray.CheckAndStopTransparentProxy()
 	_ = v2ray.StopV2rayService()
+	_ = db.DB().Close()
 	return nil
 }

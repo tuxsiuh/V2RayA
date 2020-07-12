@@ -1,8 +1,8 @@
 package global
 
 import (
-	"v2rayA/plugins"
 	"os"
+	"github.com/mzz2017/v2rayA/plugin"
 )
 
 var Version = "debug"
@@ -10,8 +10,12 @@ var FoundNew = false
 var RemoteVersion = ""
 var SupportTproxy = true
 
-var ServiceControlMode = GetServiceControlMode()
+var ServiceControlMode SystemServiceControlMode
 
-var Plugins plugins.Plugins
+var Plugins plugin.Plugins
 
 var V2RayPID *os.Process
+
+func IsDebug() bool {
+	return Version == "debug"
+}

@@ -1,5 +1,5 @@
 <template>
-  <div class="modal-card" style="max-width: 600px;margin:auto">
+  <div class="modal-card modal-setting" style="max-width: 600px;margin:auto">
     <header class="modal-card-head">
       <p class="modal-card-title">{{ $t("common.setting") }}</p>
     </header>
@@ -167,6 +167,17 @@
             {{ $t("operations.configure") }}
           </b-button>
         </template>
+        <template v-if="antipollution === 'none' && showDns">
+          <b-button
+            :class="{
+              'right-extra-button': antipollution === 'closed',
+              'no-border-radius': antipollution !== 'closed'
+            }"
+            @click="handleClickDnsSetting"
+          >
+            {{ $t("operations.configure") }}
+          </b-button>
+        </template>
         <template
           v-if="antipollution !== 'closed' && iptablesMode === 'tproxy'"
         >
@@ -292,12 +303,13 @@ import dayjs from "dayjs";
 import ModalCustomRouting from "@/components/modalCustomRouting";
 import ModalCustomRoutingA from "@/components/modalCustomRoutingA";
 import CusBInput from "./input/Input.vue";
-import { isVersionGreaterEqual, parseURL } from "../assets/js/utils";
+import { isVersionGreaterEqual, parseURL, toInt } from "../assets/js/utils";
 import BButton from "buefy/src/components/button/Button";
 import BSelect from "buefy/src/components/select/Select";
 import BCheckboxButton from "buefy/src/components/checkbox/CheckboxButton";
 import modalPortWhiteList from "@/components/modalPortWhiteList";
 import modalDohSetting from "./modalDohSetting";
+import modalDnsSetting from "./modalDnsSetting";
 import axios from "../plugins/axios";
 import { waitingConnected } from "../assets/js/networkInspect";
 
@@ -324,6 +336,7 @@ export default {
     localGFWListVersion: "checking...",
     showAntipollution: false,
     showDoh: false,
+    showDns: false,
     showTransparentModeRoutingPac: false,
     showRoutingA: false,
     showAntipollutionClosed: false
@@ -339,7 +352,7 @@ export default {
         port =
           U.protocol === "http" ? "80" : U.protocol === "https" ? "443" : "";
       }
-      return port;
+      return toInt(port);
     },
     iptablesMode() {
       return localStorage["iptablesMode"] || "tproxy";
@@ -371,19 +384,23 @@ export default {
         this.showDoh =
           isVersionGreaterEqual(localStorage["version"], "0.6.2") &&
           localStorage["dohValid"] === "yes";
+        this.showDns = isVersionGreaterEqual(
+          localStorage["version"],
+          "0.7.0.6"
+        );
+        this.showTransparentModeRoutingPac = isVersionGreaterEqual(
+          localStorage["version"],
+          "0.6.4"
+        );
+        this.showAntipollutionClosed = isVersionGreaterEqual(
+          localStorage["version"],
+          "0.7.0.2"
+        );
+        this.showRoutingA = isVersionGreaterEqual(
+          localStorage["version"],
+          "0.6.8"
+        );
       });
-      this.showTransparentModeRoutingPac = isVersionGreaterEqual(
-        localStorage["version"],
-        "0.6.4"
-      );
-      this.showAntipollutionClosed = isVersionGreaterEqual(
-        localStorage["version"],
-        "0.7.0.2"
-      );
-      this.showRoutingA = isVersionGreaterEqual(
-        localStorage["version"],
-        "0.6.8"
-      );
     });
     //白名单有没有项，没有就post一下
     this.$axios({
@@ -395,7 +412,7 @@ export default {
             url: apiRoot + "/portWhiteList",
             method: "post",
             data: {
-              requestPort: this.v2rayaPort
+              requestPort: this.v2rayaPort.toString()
             }
           });
         }
@@ -418,7 +435,8 @@ export default {
             message: this.$t("common.success"),
             type: "is-warning",
             position: "is-top",
-            duration: 5000
+            duration: 5000,
+            queue: false
           });
         });
       });
@@ -457,7 +475,8 @@ export default {
             this.$buefy.toast.open({
               message: res.data.code,
               type: "is-primary",
-              position: "is-top"
+              position: "is-top",
+              queue: false
             });
             this.$parent.close();
           });
@@ -531,6 +550,14 @@ export default {
       this.$buefy.modal.open({
         parent: this,
         component: modalDohSetting,
+        hasModalCard: true,
+        canCancel: true
+      });
+    },
+    handleClickDnsSetting() {
+      this.$buefy.modal.open({
+        parent: this,
+        component: modalDnsSetting,
         hasModalCard: true,
         canCancel: true
       });
@@ -608,5 +635,10 @@ export default {
 }
 .no-border-radius {
   border-radius: 0;
+}
+.modal-setting {
+  .b-checkbox.checkbox {
+    margin-right: 0;
+  }
 }
 </style>

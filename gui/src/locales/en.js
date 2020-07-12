@@ -120,7 +120,7 @@ export default {
         "If there is a problem with transparent proxy, try setting 'Prevent DNS Spoofing' as 'Off' or turn on 'Enhanced Mode' (v0.7.0.2+)." +
         "★Forward DNS Request: DNS requests will be forwarded by proxy server." +
         "★DoH(dns-over-https, v2ray-core: 4.22.0+): Stable and fast DoH services are suggested." +
-        "★Enhanced Mode(v0.7.0.2+) will replace the method of forwarding dns-query using iptables with DnsPoison method",
+        "★Enhanced Mode(v0.7.0.2+) will replace the method of forwarding dns-query using iptables with DnsPoison method to deal with contaminated domain names.",
       tcpFastOpen:
         "Simplify TCP handshake process to speed up connection establishment. Risk of emphasizing characteristics of packets exists. Support vmess only now.",
       mux:
@@ -141,7 +141,7 @@ export default {
     messages: [
       "Service address default as 0.0.0.0:2017 can be changed by setting environment variable <code>V2RAYA_ADDRESS</code> and command argument<code>--address</code>.",
       "If you start v2raya docker container with port mapping instead of <code>--network host</code>, you can remapping ports in this way.",
-      "We can not judge port occupations in docker mode. Confirm ports are free.",
+      "We cannot judge port occupations in docker mode. Confirm it by yourself.",
       "Zero means to close this port."
     ]
   },
@@ -168,13 +168,22 @@ export default {
     title: "Configure DoH Server",
     dohPriorityList: "Priority list of DoH Servers",
     messages: [
-      "DoH(DNS over HTTPS) can be used to prevent dns spoofing, but some public DoH servers are not access in specific areas. You should choose the fastest and stablest DoH server.",
+      "DoH (DNS over HTTPS) can effectively avoid DNS pollution. But some native DoH providers may themselves be contaminated sometimes. In addition, some DoH services may be blocked by local network providers. Please choose the fastest and stablest DoH server.",
       "Awesome public DoH servers in Mainland China include alidns, geekdns, rubyfish, etc",
       "In taiwan area include quad101, etc",
       "USA: cloudflare, dns.google, etc",
       'Checklist：<a href="https://dnscrypt.info/public-servers" target="_blank">public-servers</a>',
-      'Besides, setting up DoH service at your own server doesn\'t suffer dns spoofing is suggested and well-behaved int most cases. <a href="https://hub.docker.com/r/flexo3001/rust-doh" target="_blank">rust-doh</a>',
+      'Besides, setting up DoH service at your own native server is suggested and well-behaved in most cases <a href="https://github.com/facebookexperimental/doh-proxy" target="_blank">doh-proxy</a>. In this case, it is recommended to run the server(doh-proxy/doh-httpproxy) providing service and client(doh-stub) connecting to doh.opendns.com at the same time and connect them in series, because you can hardly find a server that is not polluted in a generally contaminated region.',
       "Optimally, place one or two lines above. The list will restore to default after saving with empty content."
+    ]
+  },
+  dns: {
+    title: "Configure DNS Server",
+    dnsPriorityList: "Priority list of DNS Servers",
+    messages: [
+      "In the 'Prevent DNS Hijack Only' mode, the list is just the DNS configuration. In other modes, the first item in the list is the DNS server for querying Chinese mainland addresses.",
+      "Please fill in the IP or domain of the DNS server (without port) in the list. Ports other than 53 are not supported.",
+      "Optimally, place exact two lines above. The list will restore to default after saving with empty content."
     ]
   },
   egressPortWhitelist: {
@@ -182,8 +191,8 @@ export default {
     tcpPortWhitelist: "TCP Port Whitelist",
     udpPortWhitelist: "UDP Port Whitelist",
     messages: [
-      "If v2rayA is setup on a server providing service to clients, pay attention:",
-      "Transparent proxy will force all TCP and UDP traffic to pass through proxy server, where source IP address will be replaced with proxy's. Moreover, if some clients send requests to the IP address of your server that provides service, they will received responses from your proxy's IP address weirdly, which is illegal.",
+      "If v2rayA is setup on a server A which connected with a proxy server B, pay attention:",
+      "Transparent proxy will force all TCP and UDP traffic to pass through proxy server B, where source IP address will be replaced with proxy B's. Moreover, if some clients send requests to server A that provides service, they will received responses from your proxy B's IP address weirdly, which is illegal.",
       "To resolve it, we need to add those service ports to whitelist so that not pass through proxy.For examples, ssh(22)、v2raya({v2rayaPort}).",
       "Obviously, if the server does not provide any service, you can skip configuring.",
       "Formatting：22 means port 22，20170:20172 means three ports 20170 to 20172."
@@ -234,7 +243,7 @@ export default {
           <p class="about-small">Other ports：</p>
           <p class="about-small">32345: tproxy, needed by transparent proxy </p>
           <p class="about-small">32346: port of plugins such as trojan, ssr and pingtunnel</p>
-          <p>All data is stored in local. If service is running in docker, configure will disappear with related docker volume's removing. Backup data if necessary.
+          <p>All data is stored in local instead of cloud. </p>
           <p>Problems found during use can be reported at <a href="https://github.com/mzz2017/v2rayA/issues">issues</a>.</p>`,
   axios: {
     messages: {

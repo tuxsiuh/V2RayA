@@ -1,15 +1,15 @@
 package v2ray
 
 import (
-	"v2rayA/common"
-	"v2rayA/core/v2ray/asset"
-	"v2rayA/global"
 	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
+	"github.com/mzz2017/v2rayA/common"
+	"github.com/mzz2017/v2rayA/core/v2ray/asset"
+	"github.com/mzz2017/v2rayA/global"
 )
 
 func EnableV2rayService() (err error) {
@@ -116,6 +116,7 @@ func IsV2rayServiceValid() bool {
 	return false
 }
 
+/* get the version of v2ray-core without 'v' like 4.23.1 */
 func GetV2rayServiceVersion() (ver string, err error) {
 	dir, err := asset.GetV2rayWorkingDir()
 	if err != nil || len(dir) <= 0 {
@@ -133,7 +134,7 @@ func IfTProxyModLoaded() bool {
 func CheckAndProbeTProxy() (err error) {
 	ver, err := GetV2rayServiceVersion()
 	if err != nil {
-		return newError("fail in getting the version of v2ray-core").Base(err)
+		return newError("failed to get the version of v2ray-core").Base(err)
 	}
 	if greaterEqual, err := common.VersionGreaterEqual(ver, "4.19.1"); err != nil || !greaterEqual {
 		return newError("the version of v2ray-core (" + ver + ") is lower than 4.19.1")
@@ -143,7 +144,7 @@ func CheckAndProbeTProxy() (err error) {
 		out, err = exec.Command("sh", "-c", "modprobe xt_TPROXY").CombinedOutput()
 		if err != nil {
 			if !strings.Contains(string(out), "not found") {
-				return newError("fail in modprobing xt_TPROXY: " + string(out))
+				return newError("failed to modprobe xt_TPROXY: " + string(out))
 			}
 			// modprobe失败，不支持xt_TPROXY方案
 			return newError("not support xt_TPROXY: " + string(out))
@@ -155,7 +156,7 @@ func CheckAndProbeTProxy() (err error) {
 func CheckDohSupported() (err error) {
 	ver, err := GetV2rayServiceVersion()
 	if err != nil {
-		return newError("fail in getting the version of v2ray-core")
+		return newError("failed to get the version of v2ray-core")
 	}
 	if greaterEqual, err := common.VersionGreaterEqual(ver, "4.22.0"); err != nil || !greaterEqual {
 		return newError("the version of v2ray-core is lower than 4.22.0")

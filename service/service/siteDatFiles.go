@@ -1,9 +1,9 @@
 package service
 
 import (
-	"v2rayA/core/siteDat"
-	"v2rayA/core/v2ray/asset"
 	"github.com/golang/protobuf/proto"
+	"github.com/mzz2017/v2rayA/core/siteDat"
+	"github.com/mzz2017/v2rayA/core/v2ray/asset"
 	"io/ioutil"
 	"log"
 	"path"

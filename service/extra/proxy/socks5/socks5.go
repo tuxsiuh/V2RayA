@@ -11,7 +11,8 @@ package socks5
 
 import (
 	"github.com/mzz2017/shadowsocksR/tools/leakybuf"
-	"github.com/nadoo/glider/common/conn"
+	"github.com/mzz2017/v2rayA/extra/proxy"
+	"github.com/mzz2017/v2rayA/global"
 	"github.com/nadoo/glider/common/socks"
 	"io"
 	"log"
@@ -19,7 +20,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"v2rayA/extra/proxy"
+	"time"
 )
 
 // Version is socks5 version number.
@@ -79,12 +80,16 @@ func (s *Socks5) ListenAndServe() error {
 func (s *Socks5) ListenAndServeTCP() error {
 	l, err := net.Listen("tcp", s.addr)
 	if err != nil {
-		log.Printf("[socks5] failed to listen on %s: %v\n", s.addr, err)
+		if global.IsDebug() {
+			log.Printf("[socks5] failed to listen on %s: %v\n", s.addr, err)
+		}
 		return err
 	}
 	s.TcpListener = l
 
-	log.Printf("[socks5] listening TCP on %s\n", s.addr)
+	if global.IsDebug() {
+		log.Printf("[socks5] listening TCP on %s\n", s.addr)
+	}
 
 	for {
 		c, err := l.Accept()
@@ -92,7 +97,9 @@ func (s *Socks5) ListenAndServeTCP() error {
 			if strings.Contains(err.Error(), "use of closed network connection") {
 				return nil
 			}
-			log.Printf("[socks5] failed to accept: %v\n", err)
+			if global.IsDebug() {
+				log.Printf("[socks5] failed to accept: %v\n", err)
+			}
 			continue
 		}
 
@@ -125,26 +132,60 @@ func (s *Socks5) Serve(c net.Conn) {
 			}
 		}
 
-		log.Printf("[socks5] failed in handshake with %s: %v", c.RemoteAddr(), err)
+		if global.IsDebug() {
+			log.Printf("[socks5] failed in handshake with %s: %v", c.RemoteAddr(), err)
+		}
 		return
 	}
 
 	rc, dialer, err := s.proxy.Dial("tcp", tgt.String())
 	if err != nil {
-		log.Printf("[socks5] %s <-> %s via %s, error in dial: %v", c.RemoteAddr(), tgt, dialer, err)
+		if global.IsDebug() {
+			log.Printf("[socks5] %s <-> %s via %s, error in dial: %v", c.RemoteAddr(), tgt, dialer, err)
+		}
 		return
 	}
 	defer rc.Close()
 
-	log.Printf("[socks5] %s <-> %s via %s", c.RemoteAddr(), tgt, dialer)
+	if global.IsDebug() {
+		log.Printf("[socks5] %s <-> %s via %s", c.RemoteAddr(), tgt, dialer)
+	}
 
-	_, _, err = conn.Relay(c, rc)
+	_, _, err = Relay(c, rc)
 	if err != nil {
 		if err, ok := err.(net.Error); ok && err.Timeout() {
 			return // ignore i/o timeout
 		}
-		log.Printf("[socks5] relay error: %v", err)
+		if global.IsDebug() {
+			log.Printf("[socks5] relay error: %v", err)
+		}
 	}
+}
+
+// Relay relays between left and right.
+func Relay(left, right net.Conn) (int64, int64, error) {
+	type res struct {
+		N   int64
+		Err error
+	}
+	ch := make(chan res)
+
+	go func() {
+		n, err := io.Copy(right, left)
+		right.SetDeadline(time.Now()) // wake up the other goroutine blocking on right
+		left.SetDeadline(time.Now())  // wake up the other goroutine blocking on left
+		ch <- res{n, err}
+	}()
+
+	n, err := io.Copy(left, right)
+	right.SetDeadline(time.Now()) // wake up the other goroutine blocking on right
+	left.SetDeadline(time.Now())  // wake up the other goroutine blocking on left
+	rs := <-ch
+
+	if err == nil {
+		err = rs.Err
+	}
+	return n, rs.N, err
 }
 
 // Addr returns forwarder's address.
@@ -165,7 +206,9 @@ func (s *Socks5) Dial(network, addr string) (net.Conn, error) {
 
 	c, err := s.dialer.Dial(network, s.addr)
 	if err != nil {
-		log.Printf("[socks5]: dial to %s error: %s\n", s.addr, err)
+		if global.IsDebug() {
+			log.Printf("[socks5]: dial to %s error: %s\n", s.addr, err)
+		}
 		return nil, err
 	}
 
@@ -181,7 +224,9 @@ func (s *Socks5) Dial(network, addr string) (net.Conn, error) {
 func (s *Socks5) DialUDP(network, addr string) (pc net.PacketConn, writeTo net.Addr, err error) {
 	c, err := s.dialer.Dial("tcp", s.addr)
 	if err != nil {
-		log.Printf("[socks5] dialudp dial tcp to %s error: %s\n", s.addr, err)
+		if global.IsDebug() {
+			log.Printf("[socks5] dialudp dial tcp to %s error: %s\n", s.addr, err)
+		}
 		return nil, nil, err
 	}
 
@@ -205,7 +250,9 @@ func (s *Socks5) DialUDP(network, addr string) (pc net.PacketConn, writeTo net.A
 
 	rep := buf[1]
 	if rep != 0 {
-		log.Printf("[socks5] server reply: %d, not succeeded\n", rep)
+		if global.IsDebug() {
+			log.Printf("[socks5] server reply: %d, not succeeded\n", rep)
+		}
 		return nil, nil, newError("server connect failed")
 	}
 
@@ -216,7 +263,9 @@ func (s *Socks5) DialUDP(network, addr string) (pc net.PacketConn, writeTo net.A
 
 	pc, nextHop, err := s.dialer.DialUDP(network, uAddr.String())
 	if err != nil {
-		log.Printf("[socks5] dialudp to %s error: %s\n", uAddr.String(), err)
+		if global.IsDebug() {
+			log.Printf("[socks5] dialudp to %s error: %s\n", uAddr.String(), err)
+		}
 		return nil, nil, err
 	}
 

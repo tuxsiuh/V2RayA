@@ -12,14 +12,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"v2rayA/common/netTools/netstat"
-	"v2rayA/common/ntp"
-	"v2rayA/core/dnsPoison/entity"
-	"v2rayA/core/v2ray/asset"
-	"v2rayA/core/vmessInfo"
-	"v2rayA/global"
-	"v2rayA/persistence/configure"
-	"v2rayA/plugins"
+	"github.com/mzz2017/v2rayA/common/netTools/netstat"
+	"github.com/mzz2017/v2rayA/common/ntp"
+	"github.com/mzz2017/v2rayA/core/dnsPoison/entity"
+	"github.com/mzz2017/v2rayA/core/v2ray/asset"
+	"github.com/mzz2017/v2rayA/core/vmessInfo"
+	"github.com/mzz2017/v2rayA/db/configure"
+	"github.com/mzz2017/v2rayA/global"
+	"github.com/mzz2017/v2rayA/plugin"
 )
 
 func IsV2RayProcessExists() bool {
@@ -128,11 +128,11 @@ func RestartV2rayService() (err error) {
 		global.V2RayPID, err = os.StartProcess(v2wd+"/v2ray", []string{"--config=" + asset.GetConfigPath()}, &os.ProcAttr{
 			Dir: v2ctlDir, //防止找不到v2ctl
 			Env: os.Environ(),
-			Files: []*os.File{
-				os.Stdin,
-				os.Stdout,
-				os.Stderr,
-			},
+			//Files: []*os.File{
+			//	os.Stdin,
+			//	os.Stdout,
+			//	os.Stderr,
+			//},
 		})
 		if err != nil {
 			err = newError(string(out)).Base(err)
@@ -203,12 +203,14 @@ func RestartV2rayService() (err error) {
 func UpdateV2RayConfig(v *vmessInfo.VmessInfo) (err error) {
 	CheckAndStopTransparentProxy()
 	defer func() {
-		if e := CheckAndSetupTransparentProxy(true); err == nil && e != nil {
-			err = e
+		if e := CheckAndSetupTransparentProxy(true); e != nil {
+			err = newError(e).Base(err)
 		}
 	}()
 	//iptables.SpoofingFilter.GetCleanCommands().Clean()
 	//defer iptables.SpoofingFilter.GetSetupCommands().Setup(nil)
+	global.Plugins.CloseAll()
+	entity.StopDNSPoison()
 	//读配置，转换为v2ray配置并写入
 	var (
 		tmpl      Template
@@ -222,7 +224,6 @@ func UpdateV2RayConfig(v *vmessInfo.VmessInfo) (err error) {
 		}
 		sr, err = cs.LocateServer()
 		if err != nil {
-			log.Println(err)
 			return
 		}
 		tmpl, extraInfo, err = NewTemplateFromVmessInfo(sr.VmessInfo)
@@ -237,9 +238,6 @@ func UpdateV2RayConfig(v *vmessInfo.VmessInfo) (err error) {
 		return
 	}
 
-	global.Plugins.CloseAll()
-	entity.StopDNSPoison()
-
 	if v == nil && !IsV2RayRunning() {
 		//没有运行就不需要重新启动了
 		return
@@ -247,26 +245,24 @@ func UpdateV2RayConfig(v *vmessInfo.VmessInfo) (err error) {
 	if v == nil {
 		v = &sr.VmessInfo
 	}
+	if occupied, port, pname := tmpl.CheckInboundPortsOccupied(); occupied {
+		return newError("Port ", port, " is occupied by ", pname)
+	}
 	err = RestartV2rayService()
 	if err != nil {
 		return
 	}
 	if v.Protocol != "" && v.Protocol != "vmess" {
 		// 说明是plugin，启动plugin client
-		var plugin plugins.Plugin
-		plugin, err = plugins.NewPlugin(global.GetEnvironmentConfig().PluginListenPort, *v)
+		var plu plugin.Plugin
+		plu, err = plugin.NewPlugin(global.GetEnvironmentConfig().PluginListenPort, *v)
 		if err != nil {
 			return
 		}
-		global.Plugins.Append(plugin)
+		global.Plugins.Append(plu)
 	}
-	if setting := configure.GetSettingNotNil();
-		setting.Transparent != configure.TransparentClose &&
-			setting.AntiPollution != configure.AntipollutionClosed &&
-			(!global.SupportTproxy || setting.EnhancedMode) {
-		//redirect+poison增强方案
-		entity.SetupDnsPoisonWithExtraInfo(extraInfo)
-	}
+
+	entity.CheckAndSetupDnsPoisonWithExtraInfo(extraInfo)
 	return
 }
 
@@ -290,6 +286,9 @@ func pretendToStopV2rayService() (err error) {
 		return
 	}
 	if IsV2RayRunning() {
+		if occupied, port, pname := tmplJson.CheckInboundPortsOccupied(); occupied {
+			return newError("Port ", port, " is occupied by ", pname)
+		}
 		err = RestartV2rayService()
 	}
 	return
@@ -314,7 +313,7 @@ func StopV2rayService() (err error) {
 	defer CheckAndStopTransparentProxy()
 	defer func() {
 		if IsV2RayRunning() {
-			msg := "fail in stopping v2ray"
+			msg := "failed to stop v2ray"
 			if err != nil && len(strings.TrimSpace(err.Error())) > 0 {
 				msg += ": " + err.Error()
 			}

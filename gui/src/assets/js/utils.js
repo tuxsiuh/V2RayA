@@ -1,4 +1,5 @@
 import CONST from "./const.js";
+
 function locateServer(touch, whichServer) {
   let ind = whichServer.id - 1;
   let sub = whichServer.sub;
@@ -10,7 +11,7 @@ function locateServer(touch, whichServer) {
   return null;
 }
 
-function handleResponse(res, that, suc, err) {
+function handleResponse(res, that, suc, err, fail) {
   if (!res.data) {
     if (err && err instanceof Function) {
       err.apply(that);
@@ -23,13 +24,17 @@ function handleResponse(res, that, suc, err) {
     if (err && err instanceof Function) {
       err.apply(that);
     } else {
-      that.$buefy.toast.open({
-        message: res.data.message,
-        type: "is-warning",
-        position: "is-top",
-        queue: false,
-        duration: 5000
-      });
+      if (fail && fail instanceof Function) {
+        fail.apply(that);
+      } else {
+        that.$buefy.toast.open({
+          message: res.data.message,
+          type: "is-warning",
+          position: "is-top",
+          queue: false,
+          duration: 5000
+        });
+      }
     }
   }
 }
@@ -185,8 +190,7 @@ function isIntranet(url) {
     "172.16.0.0/12",
     "192.168.0.0/16",
     "224.0.0.0/4",
-    "240.0.0.0/4",
-    "255.255.255.255/32"
+    "240.0.0.0/4"
   ];
   return list.some(mask => {
     let arr = mask.split("/");
@@ -238,11 +242,23 @@ function isVersionGreaterEqual(va, vb) {
   return a.length >= b.length;
 }
 
+function toInt(s) {
+  if (typeof s === "string") {
+    return parseInt(s);
+  } else if (typeof s === "number") {
+    return parseInt(s);
+  } else if (typeof s === "boolean") {
+    return s ? 1 : 0;
+  }
+  return s;
+}
+
 export {
   locateServer,
   handleResponse,
   parseURL,
   generateURL,
   isIntranet,
-  isVersionGreaterEqual
+  isVersionGreaterEqual,
+  toInt
 };

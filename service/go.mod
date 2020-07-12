@@ -1,9 +1,8 @@
-module v2rayA
+module github.com/mzz2017/v2rayA
 
-go 1.12
+go 1.13
 
 require (
-	github.com/DeanThompson/ginpprof v0.0.0-20190408063150-3be636683586
 	github.com/beevik/ntp v0.3.0
 	github.com/cakturk/go-netstat v0.0.0-20190620190123-a633b9c55b1a
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
@@ -18,12 +17,12 @@ require (
 	github.com/mattn/go-isatty v0.0.8 // indirect
 	github.com/muhammadmuzzammil1998/jsonc v0.0.0-20190906142622-1265e9b150c6
 	github.com/mzz2017/go-engine v0.0.0-20200509094339-b56921189229
-	github.com/mzz2017/shadowsocksR v0.0.0-20200126130347-721f53a7b15a
+	github.com/mzz2017/shadowsocksR v0.0.0-20200609132134-0c9b4a42cfb1
 	github.com/nadoo/glider v0.9.3
 	github.com/pkg/errors v0.9.1
 	github.com/stevenroose/gonfig v0.1.4
 	github.com/tidwall/gjson v1.3.5
-	github.com/tidwall/sjson v1.0.4
+	github.com/xujiajun/nutsdb v0.5.0
 	golang.org/x/crypto v0.0.0-20200406173513-056763e48d71 // indirect
 	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
@@ -36,3 +35,4 @@ require (
 // use `go list -m all` to confirm the final module used
 //replace github.com/mzz2017/shadowsocksR => ../../shadowsocksR
 //replace github.com/mzz2017/go-engine => ../../go-engine
+replace v2ray.com/core => github.com/v2ray/v2ray-core v0.0.0-20200603100350-6b5d2fed91c0

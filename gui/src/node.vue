@@ -114,20 +114,15 @@
       </b-collapse>
 
       <b-tabs
-        :value="tab"
+        v-if="tableData.subscriptions.length || tableData.servers.length"
+        v-model="tab"
         position="is-centered"
         type="is-toggle-rounded"
         @change="handleTabsChange"
       >
-        <b-tab-item
-          v-if="!!tableData.subscriptions.length"
-          label="SUBSCRIPTION"
-        >
+        <b-tab-item label="SUBSCRIPTION">
           <b-field :label="`SUBSCRIPTION(${tableData.subscriptions.length})`">
             <b-table
-              :paginated="tableData.subscriptions.length > 30"
-              :current-page.sync="currentPage.subscriptions"
-              per-page="15"
               :data="tableData.subscriptions"
               :checked-rows.sync="checkedRows"
               :row-class="(row, index) => row.connected && 'is-connected'"
@@ -192,10 +187,9 @@
                 </b-table-column>
               </template>
             </b-table>
-          </b-field>
-        </b-tab-item>
+          </b-field></b-tab-item
+        >
         <b-tab-item
-          v-if="!!tableData.servers.length"
           label="SERVER"
           :icon="
             `${connectedServer._type === 'server' ? ' iconfont icon-dian' : ''}`
@@ -203,8 +197,8 @@
         >
           <b-field :label="`SERVER(${tableData.servers.length})`">
             <b-table
-              :paginated="tableData.servers.length > 30"
-              per-page="15"
+              :paginated="tableData.servers.length > 150"
+              per-page="100"
               :current-page.sync="currentPage.servers"
               :data="tableData.servers"
               :checked-rows.sync="checkedRows"
@@ -291,7 +285,10 @@
             }`
           "
         >
-          <b-field :label="`${sub.host.toUpperCase()}(${sub.servers.length})`">
+          <b-field
+            v-if="tab === subi + 2"
+            :label="`${sub.host.toUpperCase()}(${sub.servers.length})`"
+          >
             <b-table
               :paginated="sub.servers.length >= 150"
               :current-page.sync="currentPage[sub.id]"
@@ -422,7 +419,7 @@ export default {
   components: { ModalSubscription, ModalServer },
   data() {
     return {
-      currentPage: { servers: 0, subscriptions: 0 },
+      currentPage: { servers: 1, subscriptions: 1 },
       tableData: {
         servers: [],
         subscriptions: [],
@@ -445,7 +442,8 @@ export default {
         id: 0,
         sub: 0
       },
-      overHeight: false
+      overHeight: false,
+      clipboard: null
     };
   },
   watch: {
@@ -472,21 +470,26 @@ export default {
       this.ready = true;
     });
   },
+  beforeDestroy() {
+    this.clipboard.destroy();
+  },
   mounted() {
-    let clipboard = new ClipboardJS(".sharingAddressTag");
-    clipboard.on("success", e => {
+    this.clipboard = new ClipboardJS(".sharingAddressTag");
+    this.clipboard.on("success", e => {
       this.$buefy.toast.open({
         message: this.$t("common.success"),
         type: "is-primary",
-        position: "is-top"
+        position: "is-top",
+        queue: false
       });
       e.clearSelection();
     });
-    clipboard.on("error", e => {
+    this.clipboard.on("error", e => {
       this.$buefy.toast.open({
         message: this.$t("common.fail") + ", error:" + e.toLocaleString(),
         type: "is-warning",
-        position: "is-top"
+        position: "is-top",
+        queue: false
       });
     });
     const that = this;
@@ -545,15 +548,15 @@ export default {
         return;
       }
       let sub = whichServer.sub;
-      let subscriptionServersOffset = 0;
-      let serversOffset = 0;
-      if (this.tableData.subscriptions.length > 0) {
-        subscriptionServersOffset++;
-        serversOffset++;
-      }
-      if (this.tableData.servers.length > 0) {
-        subscriptionServersOffset++;
-      }
+      let subscriptionServersOffset = 2;
+      let serversOffset = 1;
+      // if (this.tableData.subscriptions.length > 0) {
+      //   subscriptionServersOffset++;
+      //   serversOffset++;
+      // }
+      // if (this.tableData.servers.length > 0) {
+      //   subscriptionServersOffset++;
+      // }
       if (whichServer._type === CONST.SubscriptionServerType) {
         this.tab = sub + subscriptionServersOffset;
       } else if (whichServer._type === CONST.ServerType) {
@@ -599,7 +602,8 @@ export default {
                 this.$buefy.toast.open({
                   message: res.data.message,
                   type: "is-warning",
-                  position: "is-top"
+                  position: "is-top",
+                  queue: false
                 });
               }
             });
@@ -644,7 +648,8 @@ export default {
                 message: res.data.message,
                 type: "is-warning",
                 position: "is-top",
-                duration: 5000
+                duration: 5000,
+                queue: false
               });
             }
           })
@@ -676,7 +681,8 @@ export default {
                 message: res.data.message,
                 type: "is-warning",
                 position: "is-top",
-                duration: 5000
+                duration: 5000,
+                queue: false
               });
             }
           }),
@@ -701,7 +707,8 @@ export default {
               message: res.data.message,
               type: "is-warning",
               position: "is-top",
-              duration: 5000
+              duration: 5000,
+              queue: false
             });
           }
         });
@@ -728,7 +735,8 @@ export default {
           message: this.$t("latency.message"),
           type: "is-primary",
           position: "is-top",
-          duration: 5000
+          duration: 5000,
+          queue: false
         });
       }, 10 * 1200);
       this.$axios({
@@ -903,7 +911,8 @@ export default {
             message: this.$t("common.success"),
             type: "is-primary",
             position: "is-top",
-            duration: 5000
+            duration: 5000,
+            queue: false
           });
         });
       });
@@ -939,7 +948,8 @@ export default {
             message: this.$t("common.success"),
             type: "is-primary",
             position: "is-top",
-            duration: 3000
+            duration: 3000,
+            queue: false
           });
           this.showModalServer = false;
           this.tableData = res.data.data.touch;
@@ -989,7 +999,8 @@ export default {
             message: this.$t("common.success"),
             type: "is-primary",
             position: "is-top",
-            duration: 3000
+            duration: 3000,
+            queue: false
           });
           this.showModalSubscription = false;
           this.tableData = res.data.data.touch;

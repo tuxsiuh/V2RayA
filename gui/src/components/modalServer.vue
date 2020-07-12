@@ -49,7 +49,7 @@
               expanded
             />
           </b-field>
-          <b-field label="AID" label-position="on-border">
+          <b-field label="AlterID" label-position="on-border">
             <b-input
               ref="vmess_aid"
               v-model="vmess.aid"
@@ -57,6 +57,7 @@
               type="number"
               min="0"
               max="65535"
+              required
               expanded
             />
           </b-field>
@@ -68,6 +69,21 @@
             <b-select v-model="vmess.tls" expanded @input="handleNetworkChange">
               <option value="none">{{ $t("setting.options.off") }}</option>
               <option value="tls">{{ $t("setting.options.on") }}</option>
+            </b-select>
+          </b-field>
+          <b-field
+            v-show="vmess.tls === 'tls'"
+            label="AllowInsecure"
+            label-position="on-border"
+          >
+            <b-select
+              ref="vmess_allow_insecure"
+              v-model="vmess.allowInsecure"
+              expanded
+              required
+            >
+              <option :value="false">{{ $t("operations.no") }}</option>
+              <option :value="true">{{ $t("operations.yes") }}</option>
             </b-select>
           </b-field>
           <b-field label="Network" label-position="on-border">
@@ -150,17 +166,6 @@
               expanded
             />
           </b-field>
-          <b-field label="AllowInsecure" label-position="on-border">
-            <b-select
-              ref="vmess_allow_insecure"
-              v-model="vmess.allowInsecure"
-              expanded
-              required
-            >
-              <option :value="false">{{ $t("operations.no") }}</option>
-              <option :value="true">{{ $t("operations.yes") }}</option>
-            </b-select>
-          </b-field>
         </b-tab-item>
         <b-tab-item label="SS">
           <b-field label="Name" label-position="on-border">
@@ -216,9 +221,6 @@
               <option value="rc4-md5">rc4-md5</option>
               <option value="chacha20">chacha20</option>
               <option value="chacha20-ietf">chacha20-ietf</option>
-              <option value="xchacha20-ietf-poly1305"
-                >xchacha20-ietf-poly1305
-              </option>
               <option value="salsa20">salsa20</option>
               <option value="camellia-128-cfb">camellia-128-cfb</option>
               <option value="camellia-192-cfb">camellia-192-cfb</option>
@@ -290,6 +292,7 @@
               <option value="idea-cfb">idea-cfb</option>
               <option value="rc2-cfb">rc2-cfb</option>
               <option value="seed-cfb">seed-cfb</option>
+              <option value="none">none</option>
             </b-select>
           </b-field>
           <b-field label="Protocol" label-position="on-border">
@@ -299,6 +302,7 @@
               <option value="auth_sha1_v4">auth_sha1_v4</option>
               <option value="auth_aes128_md5">auth_aes128_md5</option>
               <option value="auth_aes128_sha1">auth_aes128_sha1</option>
+              <option value="auth_chain_a">auth_chain_a</option>
             </b-select>
           </b-field>
           <b-field
@@ -458,7 +462,7 @@ export default {
       add: "",
       port: "",
       id: "",
-      aid: "0",
+      aid: "",
       net: "tcp",
       type: "none",
       host: "",

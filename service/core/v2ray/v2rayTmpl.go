@@ -4,6 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/mzz2017/v2rayA/common"
+	"github.com/mzz2017/v2rayA/common/netTools/ports"
+	"github.com/mzz2017/v2rayA/core/dnsPoison/entity"
+	"github.com/mzz2017/v2rayA/core/routingA"
+	"github.com/mzz2017/v2rayA/core/v2ray/asset"
+	"github.com/mzz2017/v2rayA/core/vmessInfo"
+	"github.com/mzz2017/v2rayA/db/configure"
+	"github.com/mzz2017/v2rayA/global"
 	"io/ioutil"
 	"log"
 	"net"
@@ -12,12 +20,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"v2rayA/core/dnsPoison/entity"
-	"v2rayA/core/routingA"
-	"v2rayA/core/v2ray/asset"
-	"v2rayA/core/vmessInfo"
-	"v2rayA/global"
-	"v2rayA/persistence/configure"
 )
 
 /*对应template.json*/
@@ -74,12 +76,19 @@ type Inbound struct {
 	Tag            string           `json:"tag,omitempty"`
 }
 type InboundSettings struct {
-	Auth           string      `json:"auth,omitempty"`
-	UDP            bool        `json:"udp,omitempty"`
-	IP             interface{} `json:"ip,omitempty"`
-	Clients        interface{} `json:"clients,omitempty"`
-	Network        string      `json:"network,omitempty"`
-	FollowRedirect bool        `json:"followRedirect,omitempty"`
+	Auth      string      `json:"auth,omitempty"`
+	UDP       bool        `json:"udp,omitempty"`
+	IP        interface{} `json:"ip,omitempty"`
+	Accounts  []Account   `json:"accounts,omitempty"`
+	Clients   interface{} `json:"clients,omitempty"`
+	Network   string      `json:"network,omitempty"`
+	UserLevel int         `json:"userLevel,omitempty"`
+
+	FollowRedirect bool `json:"followRedirect,omitempty"`
+}
+type Account struct {
+	User string `json:"user"`
+	Pass string `json:"pass"`
 }
 type User struct {
 	ID       string `json:"id"`
@@ -111,8 +120,9 @@ type Settings struct {
 	UserLevel      *int        `json:"userLevel,omitempty"`
 }
 type TLSSettings struct {
-	AllowInsecure bool        `json:"allowInsecure"`
-	ServerName    interface{} `json:"serverName"`
+	AllowInsecure        bool        `json:"allowInsecure"`
+	ServerName           interface{} `json:"serverName"`
+	AllowInsecureCiphers bool        `json:"allowInsecureCiphers"`
 }
 type Headers struct {
 	Host string `json:"Host"`
@@ -309,6 +319,12 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 			if v.AllowInsecure {
 				o.StreamSettings.TLSSettings.AllowInsecure = true
 			}
+			ver, e := GetV2rayServiceVersion()
+			if e != nil {
+				log.Println(newError("cannot get the version of v2ray-core").Base(e))
+			} else if !common.VersionMustGreaterEqual(ver, "4.23.2") {
+				o.StreamSettings.TLSSettings.AllowInsecureCiphers = true
+			}
 			// always set SNI
 			if v.Host != "" {
 				o.StreamSettings.TLSSettings.ServerName = v.Host
@@ -317,7 +333,7 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 	case "shadowsocks", "shadowsocksr":
 		v.Net = strings.ToLower(v.Net)
 		switch v.Net {
-		case "aes-128-cfb", "aes-192-cfb", "aes-256-cfb", "aes-128-ctr", "aes-192-ctr", "aes-256-ctr", "aes-128-ofb", "aes-192-ofb", "aes-256-ofb", "des-cfb", "bf-cfb", "cast5-cfb", "rc4-md5", "chacha20", "chacha20-ietf", "salsa20", "camellia-128-cfb", "camellia-192-cfb", "camellia-256-cfb", "idea-cfb", "rc2-cfb", "seed-cfb":
+		case "aes-128-cfb", "aes-192-cfb", "aes-256-cfb", "aes-128-ctr", "aes-192-ctr", "aes-256-ctr", "aes-128-ofb", "aes-192-ofb", "aes-256-ofb", "des-cfb", "bf-cfb", "cast5-cfb", "rc4-md5", "chacha20", "chacha20-ietf", "salsa20", "camellia-128-cfb", "camellia-192-cfb", "camellia-256-cfb", "idea-cfb", "rc2-cfb", "seed-cfb", "none":
 		default:
 			return o, newError("unsupported shadowsocks encryption method: " + v.Net)
 		}
@@ -325,7 +341,7 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 			v.Type = "origin"
 		}
 		switch v.Type {
-		case "origin", "verify_sha1", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1":
+		case "origin", "verify_sha1", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1", "auth_chain_a":
 		default:
 			return o, newError("unsupported shadowsocksR protocol: " + v.Type)
 		}
@@ -356,6 +372,7 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 
 func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *configure.Setting) (dohIPs, dohDomains []string) {
 	//先修改DNS设置
+	dnslist := configure.GetDnsListNotNil()
 	t.DNS = new(DNS)
 	switch setting.AntiPollution {
 	case configure.DoH:
@@ -366,6 +383,10 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *confi
 			//使用DOHL模式，默认绕过routing和outbound以加快DOH速度
 			doh = strings.Replace(doh, "https://", "https+local://", 1)
 			t.DNS.Servers = append(t.DNS.Servers, doh)
+		}
+	case configure.AntipollutionNone:
+		for _, dns := range dnslist {
+			t.DNS.Servers = append(t.DNS.Servers, dns) //防止DNS劫持
 		}
 	case configure.DnsForward:
 		if supportUDP {
@@ -381,7 +402,7 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *confi
 			if err := CheckDohSupported(); err == nil {
 				//DNS转发，所以使用全球友好的DNS服务器
 				t.DNS.Servers = []interface{}{
-					"https://1.0.0.1/dns-query",
+					"https://1.1.1.1/dns-query",
 					"https://dns.google/dns-query",
 				}
 			}
@@ -395,8 +416,6 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *confi
 				}
 			}
 		}
-	case configure.AntipollutionNone:
-		t.DNS.Servers = []interface{}{"119.29.29.29", "114.114.114.114"} //防止DNS劫持，使用DNSPod作为主DNS
 	}
 	if setting.AntiPollution != configure.AntipollutionNone {
 		//统计DoH服务器信息
@@ -429,10 +448,10 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *confi
 		}
 
 		ds := DnsServer{
-			Address: "119.29.29.29",
+			Address: dnslist[0],
 			Port:    53,
 			Domains: []string{
-				"geosite:cn",          // 国内白名单走DNSPod
+				"geosite:cn",          // 国内白名单走AliDNS
 				"domain:ntp.org",      // NTP 服务器
 				"domain:dogedoge.com", // mzz2017爱用的多吉
 				"full:v2raya.mzz.pub", // v2rayA demo
@@ -499,13 +518,18 @@ func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []strin
 		RoutingRule{ // 国内DNS服务器直连，以分流
 			Type:        "field",
 			OutboundTag: "direct",
-			IP:          []string{"119.29.29.29", "114.114.114.114"},
+			IP:          configure.GetDnsListNotNil(),
 			Port:        "53",
 		},
 		RoutingRule{ // 劫持 53 端口流量，使用 V2Ray 的 DNS
 			Type:        "field",
 			Port:        "53",
 			OutboundTag: "dns-out",
+		},
+		RoutingRule{ // DNSPoison
+			Type:        "field",
+			IP:          []string{"240.0.0.0/4"},
+			OutboundTag: "proxy",
 		},
 	)
 	if setting.AntiPollution != configure.AntipollutionNone {
@@ -568,7 +592,7 @@ func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []strin
 	return
 }
 
-func (t *Template) SetPacRouting(setting *configure.Setting) {
+func (t *Template) SetPacRouting(setting *configure.Setting) error {
 	switch setting.PacMode {
 	case configure.WhitelistMode:
 		t.Routing.Rules = append(t.Routing.Rules,
@@ -650,15 +674,18 @@ func (t *Template) SetPacRouting(setting *configure.Setting) {
 			})
 		}
 	case configure.RoutingAMode:
-		parseRoutingA(t, []string{"pac"})
+		if err := parseRoutingA(t, []string{"pac"}); err != nil {
+			return err
+		}
 	}
+	return nil
 }
-func parseRoutingA(t *Template, inboundTags []string) {
+func parseRoutingA(t *Template, routingInboundTags []string) error {
 	ra := configure.GetRoutingA()
 	rules, err := routingA.Parse(ra)
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
 	defaultOutbound := "proxy"
 	for _, rule := range rules {
@@ -670,9 +697,9 @@ func parseRoutingA(t *Template, inboundTags []string) {
 				case string:
 					defaultOutbound = v
 				}
-			case "outbound":
+			case "inbound", "outbound":
 				switch o := rule.Value.(type) {
-				case routingA.Outbound:
+				case routingA.Bound:
 					proto := o.Value
 					switch proto.Name {
 					case "http", "socks":
@@ -699,20 +726,65 @@ func parseRoutingA(t *Template, inboundTags []string) {
 									u.Pass = passwords[i]
 								}
 								if i < len(levels) {
-									u.Level, _ = strconv.Atoi(levels[i])
+									level, err := strconv.Atoi(levels[i])
+									if err == nil {
+										u.Level = level
+									}
 								}
 								server.Users = append(server.Users, u)
 							}
 						}
-						t.Outbounds = append(t.Outbounds, Outbound{
-							Tag:      o.Name,
-							Protocol: o.Value.Name,
-							Settings: &Settings{
-								Servers: []Server{
-									server,
+						switch rule.Name {
+						case "outbound":
+							t.Outbounds = append(t.Outbounds, Outbound{
+								Tag:      o.Name,
+								Protocol: o.Value.Name,
+								Settings: &Settings{
+									Servers: []Server{
+										server,
+									},
 								},
-							},
-						})
+							})
+						case "inbound":
+							// reform from outbound
+							in := Inbound{
+								Tag:      o.Name,
+								Protocol: o.Value.Name,
+								Listen:   server.Address,
+								Port:     server.Port,
+								Settings: &InboundSettings{
+									UDP: false,
+								},
+								Sniffing: Sniffing{
+									Enabled:      true,
+									DestOverride: []string{"http", "tls"},
+								},
+							}
+							if proto.Name == "socks" {
+								if len(server.Users) > 0 {
+									in.Settings.Auth = "password"
+								}
+								if udp := proto.NamedParams["udp"]; len(udp) > 0 {
+									in.Settings.UDP = udp[0] == "true"
+								}
+								if userLevels := proto.NamedParams["userLevel"]; len(userLevels) > 0 {
+									userLevel, err := strconv.Atoi(userLevels[0])
+									if err == nil {
+										in.Settings.UserLevel = userLevel
+									}
+								}
+							}
+							if len(server.Users) > 0 {
+								for _, u := range server.Users {
+									in.Settings.Accounts = append(in.Settings.Accounts, Account{
+										User: u.User,
+										Pass: u.Pass,
+									})
+								}
+							}
+							t.Inbounds = append(t.Inbounds, in)
+							routingInboundTags = append(routingInboundTags, o.Name)
+						}
 					case "freedom":
 						settings := new(Settings)
 						if len(proto.NamedParams["domainStrategy"]) > 0 {
@@ -739,7 +811,7 @@ func parseRoutingA(t *Template, inboundTags []string) {
 			rr := RoutingRule{
 				Type:        "field",
 				OutboundTag: rule.Out,
-				InboundTag:  inboundTags,
+				InboundTag:  routingInboundTags,
 			}
 			for _, f := range rule.And {
 				switch f.Name {
@@ -782,6 +854,7 @@ func parseRoutingA(t *Template, inboundTags []string) {
 		OutboundTag: defaultOutbound,
 		InboundTag:  []string{"pac"},
 	})
+	return nil
 }
 func (t *Template) SetTransparentRouting(setting *configure.Setting) {
 	switch setting.Transparent {
@@ -919,7 +992,7 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 	// 其中Template是基础配置，替换掉t即可
 	t = tmplJson.Template
 	// 调试模式
-	if global.Version == "debug" {
+	if global.IsDebug() {
 		t.Log.Loglevel = "debug"
 	}
 	// 解析Outbound
@@ -952,7 +1025,9 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 		t.DNS.Hosts[serverDomain] = serverIPs[0]
 	}
 	//PAC端口规则
-	t.SetPacRouting(setting)
+	if err = t.SetPacRouting(setting); err != nil {
+		return
+	}
 	//根据是否使用全局代理修改路由
 	if setting.Transparent != configure.TransparentClose {
 		t.SetTransparentRouting(setting)
@@ -960,12 +1035,60 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 	//置outboundSockopt
 	t.SetOutboundSockopt(supportUDP, setting)
 
+	//check dulplicated tags
+	if err = t.CheckDuplicatedTags(); err != nil {
+		return
+	}
+
 	return t, &entity.ExtraInfo{
 		DohIps:       dohIPs,
 		DohDomains:   dohHosts,
 		ServerIps:    serverIPs,
 		ServerDomain: serverDomain,
 	}, nil
+}
+
+func (t *Template) CheckDuplicatedTags() error {
+	inboundTagsSet := make(map[string]interface{})
+	for _, in := range t.Inbounds {
+		tag := in.Tag
+		if _, exists := inboundTagsSet[tag]; exists {
+			return newError("duplicated inbound tag: ", tag).AtError()
+		} else {
+			inboundTagsSet[tag] = nil
+		}
+	}
+	outboundTagsSet := make(map[string]interface{})
+	for _, out := range t.Outbounds {
+		tag := out.Tag
+		if _, exists := outboundTagsSet[tag]; exists {
+			return newError("duplicated outbound tag: ", tag)
+		} else {
+			outboundTagsSet[tag] = nil
+		}
+	}
+	return nil
+}
+
+func (t *Template) CheckInboundPortsOccupied() (occupied bool, port string, pname string) {
+	var st []string
+	for _, in := range t.Inbounds {
+		if in.Settings != nil && in.Settings.UDP {
+			st = append(st, strconv.Itoa(in.Port)+":tcp,udp")
+		} else {
+			st = append(st, strconv.Itoa(in.Port)+":tcp")
+		}
+	}
+	occupied, socket, err := ports.IsPortOccupiedWithWhitelist(st, map[string]struct{}{"v2ray": {}})
+	if err != nil {
+		return true, "unknown", err.Error()
+	}
+	if occupied {
+		port = strconv.Itoa(socket.LocalAddress.Port)
+		process, _ := socket.Process()
+		pname = process.Name
+	}
+	return
 }
 
 func (t *Template) ToConfigBytes() []byte {
