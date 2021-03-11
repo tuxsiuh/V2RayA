@@ -2,17 +2,35 @@ package controller
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/core/v2ray/asset/gfwlist"
+	"github.com/v2rayA/v2rayA/core/v2ray/where"
+	"github.com/v2rayA/v2rayA/global"
 	"net/http"
-	"github.com/mzz2017/v2rayA/common"
-	"github.com/mzz2017/v2rayA/core/v2ray"
-	"github.com/mzz2017/v2rayA/core/v2ray/asset/gfwlist"
-	"github.com/mzz2017/v2rayA/global"
 )
 
 func GetVersion(ctx *gin.Context) {
-	err := v2ray.CheckDohSupported()
 	var dohValid string
+	var vlessValid int
 	var iptablesMode string
+
+	ver, err := where.GetV2rayServiceVersion()
+	if err == nil {
+		if ok, _ := common.VersionGreaterEqual(ver, "4.27.0"); ok {
+			// 1: vless
+			vlessValid++
+			if ok, _ = common.VersionGreaterEqual(ver, "4.30.0"); ok {
+				// 2: xtls-rprx-origin
+				vlessValid++
+				if ok, _ = common.VersionGreaterEqual(ver, "4.31.0"); ok {
+					// 3: xtls-rprx-direct, xtls-rprx-direct-udp443
+					vlessValid++
+				}
+			}
+		}
+		err = v2ray.CheckDohSupported(ver)
+	}
 	if err == nil {
 		dohValid = "yes"
 	} else {
@@ -29,6 +47,7 @@ func GetVersion(ctx *gin.Context) {
 		"remoteVersion": global.RemoteVersion,
 		"serviceValid":  v2ray.IsV2rayServiceValid(),
 		"dohValid":      dohValid,
+		"vlessValid":    vlessValid,
 		"iptablesMode":  iptablesMode, //仅代表是否支持tproxy，真实iptables所使用的表还要看是否是增强模式
 	})
 }

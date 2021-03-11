@@ -149,7 +149,26 @@ axios.interceptors.response.use(
           window.open("http://v.mzz.pub", "_self");
         }
       });
-    } else if (err.message === "Network Error") {
+      SnackbarProgrammatic.open({
+        message: i18n.t("axios.messages.optimizeBackend"),
+        type: "is-primary",
+        queue: false,
+        duration: 10000,
+        position: "is-top",
+        actionText: i18n.t("operations.yes"),
+        onAction: () => {
+          // this.showCustomPorts = true;
+          ModalProgrammatic.open({
+            component: modalCustomPorts,
+            hasModalCard: true,
+            customClass: "modal-custom-ports"
+          });
+        }
+      });
+    } else if (
+      (err.message && err.message === "Network Error") ||
+      (err.config && err.config.url === "/api/version")
+    ) {
       informNotRunning(u.source.replace(u.relative, ""));
     } else {
       //其他错误

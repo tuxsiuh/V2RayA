@@ -4,23 +4,30 @@ import (
 	"bytes"
 	"fmt"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/mzz2017/v2rayA/common"
-	"github.com/mzz2017/v2rayA/common/netTools/ports"
-	"github.com/mzz2017/v2rayA/core/dnsPoison/entity"
-	"github.com/mzz2017/v2rayA/core/routingA"
-	"github.com/mzz2017/v2rayA/core/v2ray/asset"
-	"github.com/mzz2017/v2rayA/core/vmessInfo"
-	"github.com/mzz2017/v2rayA/db/configure"
-	"github.com/mzz2017/v2rayA/global"
+	"github.com/v2rayA/routingA"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/common/netTools/ports"
+	"github.com/v2rayA/v2rayA/core/dnsPoison/entity"
+	"github.com/v2rayA/v2rayA/core/v2ray/asset"
+	"github.com/v2rayA/v2rayA/core/v2ray/where"
+	"github.com/v2rayA/v2rayA/core/vmessInfo"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/global"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
 )
+
+var DirectRuleDomains = []string{
+	"full:v2raya.mzz.pub",
+	"full:v.mzz.pub",
+}
 
 /*对应template.json*/
 type TmplJson struct {
@@ -36,7 +43,7 @@ type TmplJson struct {
 	Mux            Mux            `json:"mux"`
 }
 type Template struct {
-	Log       Log        `json:"log"`
+	Log       *Log       `json:"log,omitempty"`
 	Inbounds  []Inbound  `json:"inbounds"`
 	Outbounds []Outbound `json:"outbounds"`
 	Routing   struct {
@@ -91,9 +98,11 @@ type Account struct {
 	Pass string `json:"pass"`
 }
 type User struct {
-	ID       string `json:"id"`
-	AlterID  int    `json:"alterId"`
-	Security string `json:"security"`
+	ID         string `json:"id"`
+	AlterID    int    `json:"alterId,omitempty"`
+	Encryption string `json:"encryption,omitempty"`
+	Flow       string `json:"flow,omitempty"`
+	Security   string `json:"security,omitempty"`
 }
 type Vnext struct {
 	Address string `json:"address"`
@@ -121,8 +130,11 @@ type Settings struct {
 }
 type TLSSettings struct {
 	AllowInsecure        bool        `json:"allowInsecure"`
-	ServerName           interface{} `json:"serverName"`
+	ServerName           interface{} `json:"serverName,omitempty"`
 	AllowInsecureCiphers bool        `json:"allowInsecureCiphers"`
+}
+type XTLSSettings struct {
+	ServerName interface{} `json:"serverName,omitempty"`
 }
 type Headers struct {
 	Host string `json:"Host"`
@@ -136,6 +148,7 @@ type StreamSettings struct {
 	Network      string        `json:"network,omitempty"`
 	Security     string        `json:"security,omitempty"`
 	TLSSettings  *TLSSettings  `json:"tlsSettings,omitempty"`
+	XTLSSettings *XTLSSettings `json:"xtlsSettings,omitempty"`
 	TCPSettings  *TCPSettings  `json:"tcpSettings,omitempty"`
 	KcpSettings  *KcpSettings  `json:"kcpSettings,omitempty"`
 	WsSettings   *WsSettings   `json:"wsSettings,omitempty"`
@@ -210,6 +223,7 @@ type KcpSettings struct {
 		Request  interface{} `json:"request"`
 		Response interface{} `json:"response"`
 	} `json:"header"`
+	Seed string `json:"seed"`
 }
 type HttpSettings struct {
 	Path string   `json:"path"`
@@ -218,8 +232,9 @@ type HttpSettings struct {
 type Hosts map[string]string
 
 type DNS struct {
-	Hosts   Hosts         `json:"hosts,omitempty"`
-	Servers []interface{} `json:"servers"`
+	Hosts    Hosts         `json:"hosts,omitempty"`
+	Servers  []interface{} `json:"servers"`
+	ClientIp string        `json:"clientIp,omitempty"`
 }
 type DnsServer struct {
 	Address string   `json:"address"`
@@ -255,6 +270,7 @@ func NewTemplate() (tmpl Template) {
 */
 
 func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Outbound, err error) {
+	socksPlugin := false
 	var tmplJson TmplJson
 	// 读入模板json
 	raw := []byte(TemplateJson)
@@ -278,19 +294,36 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 	port, _ := strconv.Atoi(v.Port)
 	aid, _ := strconv.Atoi(v.Aid)
 	switch strings.ToLower(v.Protocol) {
-	case "vmess":
-		o.Settings.Vnext = []Vnext{
-			{
-				Address: v.Add,
-				Port:    port,
-				Users: []User{
-					{
-						ID:       v.ID,
-						AlterID:  aid,
-						Security: "auto",
+	case "vmess", "vless":
+		switch strings.ToLower(v.Protocol) {
+		case "vmess":
+			o.Settings.Vnext = []Vnext{
+				{
+					Address: v.Add,
+					Port:    port,
+					Users: []User{
+						{
+							ID:       v.ID,
+							AlterID:  aid,
+							Security: "auto",
+						},
 					},
 				},
-			},
+			}
+		case "vless":
+			o.Settings.Vnext = []Vnext{
+				{
+					Address: v.Add,
+					Port:    port,
+					Users: []User{
+						{
+							ID: v.ID,
+							//AlterID:    0, // keep AEAD on
+							Encryption: "none",
+						},
+					},
+				},
+			}
 		}
 		o.StreamSettings = &tmplJson.StreamSettings
 		o.StreamSettings.Network = v.Net
@@ -303,9 +336,18 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 		case "mkcp", "kcp":
 			tmplJson.KcpSettings.Header.Type = v.Type
 			o.StreamSettings.KcpSettings = &tmplJson.KcpSettings
+			o.StreamSettings.KcpSettings.Seed = v.Path
 		case "tcp":
-			if strings.ToLower(v.Type) != "none" { //那就是http无疑了
+			if strings.ToLower(v.Type) == "http" {
 				tmplJson.TCPSettings.Header.Request.Headers.Host = strings.Split(v.Host, ",")
+				if v.Path != "" {
+					tmplJson.TCPSettings.Header.Request.Path = strings.Split(v.Path, ",")
+					for i := range tmplJson.TCPSettings.Header.Request.Path {
+						if !strings.HasPrefix(tmplJson.TCPSettings.Header.Request.Path[i], "/") {
+							tmplJson.TCPSettings.Header.Request.Path[i] = "/" + tmplJson.TCPSettings.Header.Request.Path[i]
+						}
+					}
+				}
 				o.StreamSettings.TCPSettings = &tmplJson.TCPSettings
 			}
 		case "h2", "http":
@@ -319,18 +361,83 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 			if v.AllowInsecure {
 				o.StreamSettings.TLSSettings.AllowInsecure = true
 			}
-			ver, e := GetV2rayServiceVersion()
+			ver, e := where.GetV2rayServiceVersion()
 			if e != nil {
 				log.Println(newError("cannot get the version of v2ray-core").Base(e))
 			} else if !common.VersionMustGreaterEqual(ver, "4.23.2") {
 				o.StreamSettings.TLSSettings.AllowInsecureCiphers = true
 			}
-			// always set SNI
+			// SNI
 			if v.Host != "" {
 				o.StreamSettings.TLSSettings.ServerName = v.Host
 			}
+		} else if strings.ToLower(v.TLS) == "xtls" {
+			o.StreamSettings.Security = "xtls"
+			o.StreamSettings.XTLSSettings = new(XTLSSettings)
+			// always set SNI
+			if v.Host != "" {
+				o.StreamSettings.XTLSSettings.ServerName = v.Host
+			}
+			if v.Flow == "" {
+				v.Flow = "xtls-rprx-origin"
+			}
+			vnext := o.Settings.Vnext.([]Vnext)
+			vnext[0].Users[0].Flow = v.Flow
+			o.Settings.Vnext = vnext
 		}
-	case "shadowsocks", "shadowsocksr":
+	case "shadowsocks":
+		v.Net = strings.ToLower(v.Net)
+		switch v.Net {
+		case "aes-256-gcm", "aes-128-gcm", "chacha20-poly1305", "chacha20-ietf-poly1305", "plain", "none":
+		default:
+			return o, newError("unsupported shadowsocks encryption method: " + v.Net)
+		}
+		target := v.Add
+		port := 0
+		switch v.Type {
+		case "http", "tls":
+			target = "127.0.0.1"
+			port = *pluginPort
+		case "":
+			port, _ = strconv.Atoi(v.Port)
+		default:
+			return o, newError("unsupported shadowsocks obfuscation method: " + v.TLS)
+		}
+		o.Settings.Servers = []Server{{
+			Address:  target,
+			Port:     port,
+			Method:   v.Net,
+			Password: v.ID,
+		}}
+	case "trojan":
+		version, err := where.GetV2rayServiceVersion()
+		if err != nil {
+			return o, newError(err)
+		}
+		if ok, err := common.VersionGreaterEqual(version, "4.31.0"); err != nil || !ok {
+			return o, newError("unsupported shadowsocks obfuscation method: " + v.TLS)
+		}
+		o.Settings.Servers = []Server{{
+			Address:  v.Add,
+			Port:     port,
+			Password: v.ID,
+		}}
+
+		//tls
+		o.StreamSettings = &tmplJson.StreamSettings
+		o.StreamSettings.Network = "tcp"
+		o.StreamSettings.Security = "tls"
+		o.StreamSettings.TLSSettings = &tmplJson.TLSSettings
+		if v.AllowInsecure {
+			o.StreamSettings.TLSSettings.AllowInsecure = true
+		}
+		// always set SNI
+		if v.Host != "" {
+			o.StreamSettings.TLSSettings.ServerName = v.Host
+		} else {
+			o.StreamSettings.TLSSettings.ServerName = v.Add
+		}
+	case "shadowsocksr":
 		v.Net = strings.ToLower(v.Net)
 		switch v.Net {
 		case "aes-128-cfb", "aes-192-cfb", "aes-256-cfb", "aes-128-ctr", "aes-192-ctr", "aes-256-ctr", "aes-128-ofb", "aes-192-ofb", "aes-256-ofb", "des-cfb", "bf-cfb", "cast5-cfb", "rc4-md5", "chacha20", "chacha20-ietf", "salsa20", "camellia-128-cfb", "camellia-192-cfb", "camellia-256-cfb", "idea-cfb", "rc2-cfb", "seed-cfb", "none":
@@ -341,7 +448,7 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 			v.Type = "origin"
 		}
 		switch v.Type {
-		case "origin", "verify_sha1", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1", "auth_chain_a":
+		case "origin", "verify_sha1", "auth_sha1_v4", "auth_aes128_md5", "auth_aes128_sha1", "auth_chain_a", "auth_chain_b":
 		default:
 			return o, newError("unsupported shadowsocksR protocol: " + v.Type)
 		}
@@ -353,11 +460,13 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 		default:
 			return o, newError("unsupported shadowsocksr obfuscation method: " + v.TLS)
 		}
-	case "pingtunnel", "trojan":
+		socksPlugin = true
+	case "pingtunnel":
+		socksPlugin = true
 	default:
 		return o, newError("unsupported protocol: " + v.Protocol)
 	}
-	if v.Protocol != "vmess" && pluginPort != nil {
+	if socksPlugin && pluginPort != nil {
 		o.Protocol = "socks"
 		o.Settings.Servers = []Server{
 			{
@@ -399,11 +508,11 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *confi
 		} else {
 			//由于plugin不支持udp
 			//先优先请求DoH（tcp）
-			if err := CheckDohSupported(); err == nil {
+			if err := CheckDohSupported(""); err == nil {
 				//DNS转发，所以使用全球友好的DNS服务器
 				t.DNS.Servers = []interface{}{
 					"https://1.1.1.1/dns-query",
-					"https://dns.google/dns-query",
+					"https://8.8.8.8/dns-query",
 				}
 			}
 			if len(t.DNS.Servers) <= 0 {
@@ -451,23 +560,19 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *confi
 			Address: dnslist[0],
 			Port:    53,
 			Domains: []string{
-				"geosite:cn",          // 国内白名单走AliDNS
-				"domain:ntp.org",      // NTP 服务器
-				"domain:dogedoge.com", // mzz2017爱用的多吉
-				"full:v2raya.mzz.pub", // v2rayA demo
-				"full:v.mzz.pub",      // v2rayA demo
+				"domain:ntp.org", // NTP 服务器
 			},
 		}
+		if !setting.DnsForceMode {
+			ds.Domains = append(ds.Domains, "geosite:cn") // 国内网站dns分流以加速访问
+		}
+
 		if len(dohDomains) > 0 {
 			ds.Domains = append(ds.Domains, dohDomains...)
 		}
 		if net.ParseIP(v.Add) == nil {
-			//如果节点地址不是IP而是域名，将其二级域名加入白名单
-			group := strings.Split(v.Add, ".")
-			if len(group) >= 2 {
-				domain := strings.Join(group[len(group)-2:], ".")
-				ds.Domains = append(ds.Domains, "domain:"+domain)
-			}
+			//如果节点地址不是IP而是域名，将其加入白名单
+			ds.Domains = append(ds.Domains, v.Add)
 		}
 		t.DNS.Servers = append(t.DNS.Servers,
 			ds,
@@ -480,7 +585,7 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *confi
 	return
 }
 
-func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []string, setting *configure.Setting, supportUDP bool) (serverIPs []string, serverDomain string) {
+func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []string, setting *configure.Setting, supportUDP bool) {
 	dohRouting := make([]RoutingRule, 0)
 	if len(dohIPs) > 0 {
 		hosts := make([]string, len(dohHosts))
@@ -563,32 +668,6 @@ func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []strin
 			Protocol:    []string{"bittorrent"},
 		},
 	)
-	serverIPs = []string{v.Add}
-	if net.ParseIP(v.Add) == nil {
-		//如果不是IP，而是域名，将其加入白名单
-		t.Routing.Rules = append([]RoutingRule{{
-			Type:        "field",
-			OutboundTag: "direct",
-			Domain:      []string{"full:" + v.Add},
-		}}, t.Routing.Rules...
-		)
-		serverDomain = v.Add
-		//解析IP
-		ips, e := net.LookupHost(v.Add)
-		if e != nil {
-			log.Println("net.LookupHost:", e)
-		}
-		serverIPs = ips
-	}
-	//将节点IP加入白名单
-	if len(serverIPs) > 0 {
-		t.Routing.Rules = append([]RoutingRule{{
-			Type:        "field",
-			OutboundTag: "direct",
-			IP:          serverIPs,
-		}}, t.Routing.Rules...
-		)
-	}
 	return
 }
 
@@ -826,7 +905,7 @@ func parseRoutingA(t *Template, routingInboundTags []string) error {
 						}
 					}
 					//this is not recommended
-					//rr.Domain = append(rr.Domain, f.Params...)
+					rr.Domain = append(rr.Domain, f.Params...)
 				case "ip":
 					for k, vv := range f.NamedParams {
 						for _, v := range vv {
@@ -844,6 +923,8 @@ func parseRoutingA(t *Template, routingInboundTags []string) error {
 					rr.Source = f.Params
 				case "user":
 					rr.User = f.Params
+				case "inboundTag":
+					rr.InboundTag = f.Params
 				}
 			}
 			t.Routing.Rules = append(t.Routing.Rules, rr)
@@ -906,7 +987,7 @@ func (t *Template) SetTransparentRouting(setting *configure.Setting) {
 }
 func (t *Template) AppendDokodemo(tproxy *string, port int, tag string) {
 	dokodemo := Inbound{
-		Listen:   "0.0.0.0",
+		Listen:   "::",
 		Port:     port,
 		Protocol: "dokodemo-door",
 		Sniffing: Sniffing{
@@ -980,6 +1061,40 @@ func (t *Template) SetInbound(setting *configure.Setting) {
 	}
 }
 
+func (t *Template) SetDirectRuleRouting(v vmessInfo.VmessInfo) (serverIPs []string, serverDomain string) {
+	serverIPs = []string{v.Add}
+	if net.ParseIP(v.Add) == nil {
+		//如果不是IP，而是域名，将其加入白名单
+		t.Routing.Rules = append([]RoutingRule{{
+			Type:        "field",
+			OutboundTag: "direct",
+			Domain:      []string{"full:" + v.Add},
+		}}, t.Routing.Rules...)
+		serverDomain = v.Add
+		//解析IP
+		ips, e := net.LookupHost(v.Add)
+		if e != nil {
+			log.Println("net.LookupHost:", e)
+		}
+		serverIPs = ips
+	}
+	//将节点IP加入白名单
+	if len(serverIPs) > 0 {
+		t.Routing.Rules = append([]RoutingRule{{
+			Type:        "field",
+			OutboundTag: "direct",
+			IP:          serverIPs,
+		}}, t.Routing.Rules...)
+	}
+	//加入给定域名白名单
+	t.Routing.Rules = append([]RoutingRule{{
+		Type:        "field",
+		OutboundTag: "direct",
+		Domain:      DirectRuleDomains,
+	}}, t.Routing.Rules...)
+	return
+}
+
 func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.ExtraInfo, err error) {
 	setting := configure.GetSettingNotNil()
 	var tmplJson TmplJson
@@ -993,7 +1108,13 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 	t = tmplJson.Template
 	// 调试模式
 	if global.IsDebug() {
+		ioutil.WriteFile(t.Log.Access, nil, 0777)
+		ioutil.WriteFile(t.Log.Error, nil, 0777)
+		os.Chmod(t.Log.Access, 0777)
+		os.Chmod(t.Log.Error, 0777)
 		t.Log.Loglevel = "debug"
+	} else {
+		t.Log = nil
 	}
 	// 解析Outbound
 	o, err := ResolveOutbound(&v, "proxy", &global.GetEnvironmentConfig().PluginListenPort)
@@ -1003,12 +1124,18 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 	t.Outbounds[0] = o
 	var supportUDP = true
 	switch o.Protocol {
-	case "vmess":
+	case "vmess", "vless":
 		//是否在设置了里开启了mux
+		muxon := setting.MuxOn == configure.Yes
+		if v.TLS == "xtls" {
+			//xtls与mux不共存
+			muxon = false
+		}
 		t.Outbounds[0].Mux = &Mux{
-			Enabled:     setting.MuxOn == configure.Yes,
+			Enabled:     muxon,
 			Concurrency: setting.Mux,
 		}
+	case "ss", "shadowsocks":
 	default:
 		supportUDP = false
 	}
@@ -1019,11 +1146,12 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 	//再修改outbounds
 	t.AppendDNSOutbound()
 	//最后是routing
-	serverIPs, serverDomain := t.SetDNSRouting(v, dohIPs, dohHosts, setting, supportUDP)
-	//添加hosts
-	if len(serverDomain) > 0 && len(serverIPs) > 0 {
-		t.DNS.Hosts[serverDomain] = serverIPs[0]
-	}
+	t.SetDNSRouting(v, dohIPs, dohHosts, setting, supportUDP)
+	serverIPs, serverDomain := t.SetDirectRuleRouting(v)
+	//添加目标服务器的ip到hosts中
+	//if len(serverDomain) > 0 && len(serverIPs) > 0 {
+	//	t.DNS.Hosts[serverDomain] = serverIPs[0]
+	//}
 	//PAC端口规则
 	if err = t.SetPacRouting(setting); err != nil {
 		return
@@ -1079,7 +1207,8 @@ func (t *Template) CheckInboundPortsOccupied() (occupied bool, port string, pnam
 			st = append(st, strconv.Itoa(in.Port)+":tcp")
 		}
 	}
-	occupied, socket, err := ports.IsPortOccupiedWithWhitelist(st, map[string]struct{}{"v2ray": {}})
+	v2rayPath, _ := where.GetV2rayBinPath()
+	occupied, socket, err := ports.IsPortOccupiedWithWhitelist(st, map[string]struct{}{path.Base(v2rayPath): {}})
 	if err != nil {
 		return true, "unknown", err.Error()
 	}
@@ -1097,7 +1226,7 @@ func (t *Template) ToConfigBytes() []byte {
 }
 
 func WriteV2rayConfig(content []byte) (err error) {
-	err = ioutil.WriteFile(asset.GetConfigPath(), content, os.FileMode(0600))
+	err = ioutil.WriteFile(asset.GetV2rayConfigPath(), content, os.FileMode(0600))
 	if err != nil {
 		return newError("WriteV2rayConfig").Base(err)
 	}
@@ -1138,7 +1267,7 @@ func (t *Template) AddMappingOutbound(v vmessInfo.VmessInfo, inboundPort string,
 	t.Inbounds = append(t.Inbounds, Inbound{
 		Port:     iPort,
 		Protocol: protocol,
-		Listen:   "0.0.0.0",
+		Listen:   "::",
 		Sniffing: Sniffing{
 			Enabled:      true,
 			DestOverride: []string{"http", "tls"},

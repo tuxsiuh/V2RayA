@@ -1,21 +1,34 @@
 package iptables
 
 import (
-	"github.com/mzz2017/v2rayA/common/cmds"
+	"fmt"
+	"github.com/v2rayA/v2rayA/common/cmds"
 )
 
-type redirect struct{ iptablesSetter }
+type redirect struct{}
 
 var Redirect redirect
+
+func (r *redirect) AddIPWhitelist(cidr string) {
+	// avoid duplication
+	r.RemoveIPWhitelist(cidr)
+	var commands string
+	commands = fmt.Sprintf(`iptables -t nat -I V2RAY -d %s -j RETURN`, cidr)
+	cmds.ExecCommands(commands, false)
+}
+
+func (r *redirect) RemoveIPWhitelist(cidr string) {
+	var commands string
+	commands = fmt.Sprintf(`iptables -t mangle -D V2RAY -d %s -j RETURN`, cidr)
+	cmds.ExecCommands(commands, false)
+}
 
 func (r *redirect) GetSetupCommands() SetupCommands {
 	commands := `
 iptables -t nat -N V2RAY
 # 出方向白名单端口
 iptables -t nat -A V2RAY -p tcp -m multiport --sports {{TCP_PORTS}} -j RETURN
-#iptables -t nat -A V2RAY -i docker+ -j RETURN
-#iptables -t nat -A V2RAY -i veth+ -j RETURN
-#iptables -t nat -A V2RAY -i br-+ -j RETURN
+iptables -t nat -A V2RAY -d 0.0.0.0/32 -j RETURN
 iptables -t nat -A V2RAY -d 10.0.0.0/8 -j RETURN
 iptables -t nat -A V2RAY -d 100.64.0.0/10 -j RETURN
 iptables -t nat -A V2RAY -d 127.0.0.0/8 -j RETURN
@@ -33,8 +46,8 @@ iptables -t nat -A V2RAY -d 240.0.0.0/4 -j RETURN
 iptables -t nat -A V2RAY -m mark --mark 0xff -j RETURN
 iptables -t nat -A V2RAY -p tcp -j REDIRECT --to-ports 32345
 
-iptables -t nat -A PREROUTING -p tcp -j V2RAY
-iptables -t nat -A OUTPUT -p tcp -j V2RAY
+iptables -t nat -I PREROUTING -p tcp -j V2RAY
+iptables -t nat -I OUTPUT -p tcp -j V2RAY
 `
 	if cmds.IsCommandValid("sysctl") {
 		commands += `

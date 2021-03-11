@@ -6,13 +6,14 @@ package pingtunnel
 import (
 	"github.com/mzz2017/go-engine/src/loggo"
 	"github.com/mzz2017/go-engine/src/pingtunnel"
+	"github.com/v2rayA/v2rayA/common/netTools/ports"
+	"github.com/v2rayA/v2rayA/core/vmessInfo"
+	"github.com/v2rayA/v2rayA/global"
+	"github.com/v2rayA/v2rayA/plugin"
 	"log"
+	"net"
 	"strconv"
 	"time"
-	"github.com/mzz2017/v2rayA/common/netTools/ports"
-	"github.com/mzz2017/v2rayA/core/vmessInfo"
-	"github.com/mzz2017/v2rayA/global"
-	"github.com/mzz2017/v2rayA/plugin"
 )
 
 type PingTunnel struct {
@@ -59,11 +60,7 @@ func (tunnel *PingTunnel) Serve(localPort int, v vmessInfo.VmessInfo) (err error
 		tcpmode, tcpmode_buffersize, tcpmode_maxwin, tcpmode_resend_timems, tcpmode_compress,
 		tcpmode_stat, open_sock5, maxconn, nil)
 	if err != nil {
-		if err == nil {
-			return nil
-		} else {
-			return newError().Base(err)
-		}
+		return newError().Base(err)
 	}
 	tunnel.client = c
 	return c.Run()
@@ -74,14 +71,19 @@ func (tunnel *PingTunnel) Close() (err error) {
 		tunnel.client.Stop()
 	}
 	start := time.Now()
+	port := strconv.Itoa(tunnel.localPort)
 	for {
 		var o bool
-		o, _, err := ports.IsPortOccupied([]string{strconv.Itoa(tunnel.localPort) + ":tcp"})
+		o, _, err := ports.IsPortOccupied([]string{port + ":tcp"})
 		if err != nil {
 			return err
 		}
 		if !o {
 			break
+		}
+		conn, e := net.Dial("tcp", ":"+port)
+		if e == nil {
+			conn.Close()
 		}
 		if time.Since(start) > 3*time.Second {
 			log.Println("PingTunnel.Close: timeout", tunnel.localPort)

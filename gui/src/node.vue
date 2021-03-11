@@ -13,12 +13,13 @@
             : 'transparent'
         }"
       >
-        <div style="max-width: 50%">
+        <div style="max-width: 60%">
           <button
             :class="{
               button: true,
               field: true,
               'is-info': true,
+              'mobile-small': true,
               'not-display': !overHeight && !isCheckedRowsPingable()
             }"
             :disabled="!isCheckedRowsPingable()"
@@ -32,6 +33,7 @@
               button: true,
               field: true,
               'is-info': true,
+              'mobile-small': true,
               'not-display': !overHeight && !isCheckedRowsPingable()
             }"
             :disabled="!isCheckedRowsPingable()"
@@ -45,6 +47,7 @@
               button: true,
               field: true,
               'is-delete': true,
+              'mobile-small': true,
               'not-display': !overHeight && !isCheckedRowsDeletable()
             }"
             :disabled="!isCheckedRowsDeletable()"
@@ -67,11 +70,19 @@
           <span class="field not-show">placeholder</span>
         </div>
         <div class="right">
-          <b-button class="field" type="is-primary" @click="handleClickCreate">
+          <b-button
+            class="field mobile-small"
+            type="is-primary"
+            @click="handleClickCreate"
+          >
             <i class="iconfont icon-chuangjiangongdan1" />
             <span>{{ $t("operations.create") }}</span>
           </b-button>
-          <b-button class="field" type="is-primary" @click="handleClickImport">
+          <b-button
+            class="field mobile-small"
+            type="is-primary"
+            @click="handleClickImport"
+          >
             <i class="iconfont icon-daoruzupu-xianxing" />
             <span>{{ $t("operations.import") }}</span>
           </b-button>
@@ -94,7 +105,7 @@
             {{ $t("welcome.title") }}
           </p>
           <a class="card-header-icon">
-            <b-icon :icon="props.open ? 'menu-down' : 'menu-up'"> </b-icon>
+            <b-icon :icon="props.open ? 'menu-down' : 'menu-up'"></b-icon>
           </a>
         </div>
         <div class="card-content">
@@ -126,69 +137,91 @@
               :data="tableData.subscriptions"
               :checked-rows.sync="checkedRows"
               :row-class="(row, index) => row.connected && 'is-connected'"
+              default-sort="id"
               checkable
             >
-              <template slot-scope="props">
-                <b-table-column field="id" label="ID" numeric>
-                  {{ props.row.id }}
-                </b-table-column>
-                <b-table-column field="host" :label="$t('subscription.host')">
-                  {{ props.row.host }}
-                </b-table-column>
-                <b-table-column
-                  field="remarks"
-                  :label="$t('subscription.remarks')"
-                >
-                  {{ props.row.remarks }}
-                </b-table-column>
-                <b-table-column
-                  field="status"
-                  :label="$t('subscription.timeLastUpdate')"
-                  width="260"
-                >
-                  {{ props.row.status }}
-                </b-table-column>
-                <b-table-column
-                  :label="$t('subscription.numberServers')"
-                  centered
-                >
-                  {{ props.row.servers.length }}
-                </b-table-column>
-                <b-table-column :label="$t('operations.name')" width="300">
-                  <div class="operate-box">
-                    <b-button
-                      size="is-small"
-                      icon-left=" github-circle iconfont icon-sync"
-                      outlined
-                      type="is-warning"
-                      @click="handleClickUpdateSubscription(props.row)"
-                    >
-                      {{ $t("operations.update") }}
-                    </b-button>
-                    <b-button
-                      size="is-small"
-                      icon-left=" github-circle iconfont icon-wendangxiugai"
-                      outlined
-                      type="is-info"
-                      @click="handleClickModifySubscription(props.row)"
-                    >
-                      {{ $t("operations.modify") }}
-                    </b-button>
-                    <b-button
-                      size="is-small"
-                      icon-left=" github-circle iconfont icon-share"
-                      outlined
-                      type="is-success"
-                      @click="handleClickShare(props.row)"
-                    >
-                      {{ $t("operations.share") }}
-                    </b-button>
-                  </div>
-                </b-table-column>
-              </template>
+              <b-table-column
+                v-slot="props"
+                field="id"
+                label="ID"
+                numeric
+                sortable
+              >
+                {{ props.row.id }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="host"
+                :label="$t('subscription.host')"
+                sortable
+              >
+                {{ props.row.host }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="remarks"
+                :label="$t('subscription.remarks')"
+                sortable
+              >
+                {{ props.row.remarks }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="status"
+                :label="$t('subscription.timeLastUpdate')"
+                width="260"
+                sortable
+              >
+                {{ props.row.status }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                :label="$t('subscription.numberServers')"
+                centered
+                numeric
+                sortable
+                :custom-sort="sortNumberServers"
+              >
+                {{ props.row.servers.length }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                :label="$t('operations.name')"
+                width="300"
+              >
+                <div class="operate-box">
+                  <b-button
+                    size="is-small"
+                    icon-left=" github-circle iconfont icon-sync"
+                    outlined
+                    type="is-warning"
+                    @click="handleClickUpdateSubscription(props.row)"
+                  >
+                    {{ $t("operations.update") }}
+                  </b-button>
+                  <b-button
+                    size="is-small"
+                    icon-left=" github-circle iconfont icon-wendangxiugai"
+                    outlined
+                    type="is-info"
+                    @click="handleClickModifySubscription(props.row)"
+                  >
+                    {{ $t("operations.modify") }}
+                  </b-button>
+                  <b-button
+                    size="is-small"
+                    icon-left=" github-circle iconfont icon-share"
+                    outlined
+                    type="is-success"
+                    @click="handleClickShare(props.row)"
+                  >
+                    {{ $t("operations.share") }}
+                  </b-button>
+                </div>
+              </b-table-column>
             </b-table>
-          </b-field></b-tab-item
-        >
+          </b-field>
+        </b-tab-item>
         <b-tab-item
           label="SERVER"
           :icon="
@@ -204,69 +237,96 @@
               :checked-rows.sync="checkedRows"
               checkable
               :row-class="(row, index) => row.connected && 'is-connected'"
+              default-sort="id"
             >
-              <template slot-scope="props">
-                <b-table-column field="id" label="ID" numeric>
-                  {{ props.row.id }}
-                </b-table-column>
-                <b-table-column field="name" :label="$t('server.name')">
-                  {{ props.row.name }}
-                </b-table-column>
-                <b-table-column field="address" :label="$t('server.address')">
-                  {{ props.row.address }}
-                </b-table-column>
-                <b-table-column field="net" :label="$t('server.protocol')">
-                  {{ props.row.net }}
-                </b-table-column>
-                <b-table-column
-                  field="pingLatency"
-                  :label="$t('server.latency')"
-                  class="ping-latency"
-                >
-                  {{ props.row.pingLatency }}
-                </b-table-column>
-                <b-table-column :label="$t('operations.name')" width="300">
-                  <div class="operate-box">
-                    <b-button
-                      size="is-small"
-                      :icon-left="
-                        ` github-circle iconfont ${
-                          props.row.connected
-                            ? 'icon-Link_disconnect'
-                            : 'icon-lianjie'
-                        }`
-                      "
-                      :outlined="!props.row.connected"
-                      :type="props.row.connected ? 'is-warning' : 'is-warning'"
-                      @click="handleClickAboutConnection(props.row)"
-                    >
-                      {{
+              <b-table-column
+                v-slot="props"
+                field="id"
+                label="ID"
+                numeric
+                sortable
+              >
+                {{ props.row.id }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="name"
+                :label="$t('server.name')"
+                sortable
+              >
+                {{ props.row.name }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="address"
+                :label="$t('server.address')"
+                sortable
+              >
+                {{ props.row.address }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="net"
+                :label="$t('server.protocol')"
+                sortable
+              >
+                {{ props.row.net }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="pingLatency"
+                :label="$t('server.latency')"
+                class="ping-latency"
+                sortable
+                :custom-sort="sortping"
+              >
+                {{ props.row.pingLatency }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                :label="$t('operations.name')"
+                width="300"
+              >
+                <div class="operate-box">
+                  <b-button
+                    size="is-small"
+                    :icon-left="
+                      ` github-circle iconfont ${
                         props.row.connected
-                          ? $t("operations.disconnect")
-                          : $t("operations.connect")
-                      }}
-                    </b-button>
-                    <b-button
-                      size="is-small"
-                      icon-left=" github-circle iconfont icon-wendangxiugai"
-                      :outlined="!props.row.connected"
-                      type="is-info"
-                      @click="handleClickModifyServer(props.row)"
-                    >
-                      {{ $t("operations.modify") }}
-                    </b-button>
-                    <b-button
-                      size="is-small"
-                      icon-left=" github-circle iconfont icon-share"
-                      :outlined="!props.row.connected"
-                      type="is-success"
-                      @click="handleClickShare(props.row)"
-                    >
-                      {{ $t("operations.share") }}
-                    </b-button>
-                  </div>
-                </b-table-column>
-              </template>
+                          ? 'icon-Link_disconnect'
+                          : 'icon-lianjie'
+                      }`
+                    "
+                    :outlined="!props.row.connected"
+                    :type="props.row.connected ? 'is-warning' : 'is-warning'"
+                    @click="handleClickAboutConnection(props.row)"
+                  >
+                    {{
+                      props.row.connected
+                        ? $t("operations.disconnect")
+                        : $t("operations.connect")
+                    }}
+                  </b-button>
+                  <b-button
+                    size="is-small"
+                    icon-left=" github-circle iconfont icon-wendangxiugai"
+                    :outlined="!props.row.connected"
+                    type="is-info"
+                    @click="handleClickModifyServer(props.row)"
+                  >
+                    {{ $t("operations.modify") }}
+                  </b-button>
+                  <b-button
+                    size="is-small"
+                    icon-left=" github-circle iconfont icon-share"
+                    :outlined="!props.row.connected"
+                    type="is-success"
+                    @click="handleClickShare(props.row)"
+                  >
+                    {{ $t("operations.share") }}
+                  </b-button>
+                </div>
+              </b-table-column>
             </b-table>
           </b-field>
         </b-tab-item>
@@ -287,7 +347,11 @@
         >
           <b-field
             v-if="tab === subi + 2"
-            :label="`${sub.host.toUpperCase()}(${sub.servers.length})`"
+            :label="
+              `${sub.host.toUpperCase()}(${sub.servers.length}${
+                sub.info ? ') (' : ''
+              }${sub.info})`
+            "
           >
             <b-table
               :paginated="sub.servers.length >= 150"
@@ -297,73 +361,97 @@
               :checked-rows.sync="checkedRows"
               checkable
               :row-class="(row, index) => row.connected && 'is-connected'"
+              default-sort="id"
             >
-              <template slot-scope="props">
-                <b-table-column field="id" label="ID" numeric>
-                  {{ props.row.id }}
-                </b-table-column>
-                <b-table-column field="name" :label="$t('server.name')">
-                  {{ props.row.name }}
-                </b-table-column>
-                <b-table-column field="address" :label="$t('server.address')">
-                  {{ props.row.address }}
-                </b-table-column>
-                <b-table-column
-                  field="net"
-                  :label="$t('server.protocol')"
-                  style="font-size:0.9em"
-                >
-                  {{ props.row.net }}
-                </b-table-column>
-                <b-table-column
-                  field="pingLatency"
-                  :label="$t('server.latency')"
-                  class="ping-latency"
-                >
-                  {{ props.row.pingLatency }}
-                </b-table-column>
-                <b-table-column :label="$t('operations.name')" width="300">
-                  <div class="operate-box">
-                    <b-button
-                      size="is-small"
-                      :icon-left="
-                        ` github-circle iconfont ${
-                          props.row.connected
-                            ? 'icon-Link_disconnect'
-                            : 'icon-lianjie'
-                        }`
-                      "
-                      :outlined="!props.row.connected"
-                      :type="props.row.connected ? 'is-warning' : 'is-warning'"
-                      @click="handleClickAboutConnection(props.row, subi)"
-                    >
-                      {{
+              <b-table-column
+                v-slot="props"
+                field="id"
+                label="ID"
+                numeric
+                sortable
+              >
+                {{ props.row.id }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="name"
+                :label="$t('server.name')"
+                sortable
+              >
+                {{ props.row.name }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="address"
+                :label="$t('server.address')"
+                sortable
+              >
+                {{ props.row.address }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="net"
+                :label="$t('server.protocol')"
+                style="font-size:0.9em"
+                sortable
+              >
+                {{ props.row.net }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                field="pingLatency"
+                :label="$t('server.latency')"
+                class="ping-latency"
+                sortable
+                :custom-sort="sortping"
+              >
+                {{ props.row.pingLatency }}
+              </b-table-column>
+              <b-table-column
+                v-slot="props"
+                :label="$t('operations.name')"
+                width="300"
+              >
+                <div class="operate-box">
+                  <b-button
+                    size="is-small"
+                    :icon-left="
+                      ` github-circle iconfont ${
                         props.row.connected
-                          ? $t("operations.disconnect")
-                          : $t("operations.connect")
-                      }}
-                    </b-button>
-                    <b-button
-                      size="is-small"
-                      icon-left=" github-circle iconfont icon-winfo-icon-chakanbaogao"
-                      :outlined="!props.row.connected"
-                      type="is-info"
-                      @click="handleClickViewServer(props.row, subi)"
-                    >
-                      {{ $t("operations.view") }}
-                    </b-button>
-                    <b-button
-                      size="is-small"
-                      icon-left=" github-circle iconfont icon-share"
-                      :outlined="!props.row.connected"
-                      type="is-success"
-                      @click="handleClickShare(props.row, subi)"
-                    >
-                      {{ $t("operations.share") }}
-                    </b-button>
-                  </div>
-                </b-table-column>
-              </template>
+                          ? 'icon-Link_disconnect'
+                          : 'icon-lianjie'
+                      }`
+                    "
+                    :outlined="!props.row.connected"
+                    :type="props.row.connected ? 'is-warning' : 'is-warning'"
+                    @click="handleClickAboutConnection(props.row, subi)"
+                  >
+                    {{
+                      props.row.connected
+                        ? $t("operations.disconnect")
+                        : $t("operations.connect")
+                    }}
+                  </b-button>
+                  <b-button
+                    size="is-small"
+                    icon-left=" github-circle iconfont icon-winfo-icon-chakanbaogao"
+                    :outlined="!props.row.connected"
+                    type="is-info"
+                    @click="handleClickViewServer(props.row, subi)"
+                  >
+                    {{ $t("operations.view") }}
+                  </b-button>
+                  <b-button
+                    size="is-small"
+                    icon-left=" github-circle iconfont icon-share"
+                    :outlined="!props.row.connected"
+                    type="is-success"
+                    @click="handleClickShare(props.row, subi)"
+                  >
+                    {{ $t("operations.share") }}
+                  </b-button>
+                </div>
+              </b-table-column>
             </b-table>
           </b-field>
         </b-tab-item>
@@ -397,6 +485,52 @@
         @submit="handleModalSubscriptionSubmit"
       />
     </b-modal>
+    <input
+      id="QRCodeImport"
+      type="file"
+      style="display: none"
+      accept="image/*"
+    />
+    <b-modal
+      :active.sync="showModalImport"
+      has-modal-card
+      trap-focus
+      aria-role="dialog"
+      aria-modal
+      @after-enter="handleModalImportShow"
+    >
+      <div class="modal-card" style="width: 350px">
+        <header class="modal-card-head">
+          <p class="modal-card-title">{{ $t("operations.import") }}</p>
+        </header>
+        <section class="modal-card-body">
+          {{ $t("import.message") }}
+          <b-input
+            ref="importInput"
+            v-model="importWhat"
+            icon-right=" iconfont icon-camera"
+            icon-right-clickable
+            @icon-right-click="handleClickImportQRCode"
+            @keyup.native="handleImportEnter"
+          ></b-input>
+        </section>
+        <footer
+          class="modal-card-foot"
+          style="display:flex;justify-content:flex-end"
+        >
+          <button class="button" type="button" @click="showModalImport = false">
+            {{ $t("operations.cancel") }}
+          </button>
+          <button
+            class="button is-primary"
+            type="button"
+            @click="handleClickImportConfirm"
+          >
+            {{ $t("operations.confirm") }}
+          </button>
+        </footer>
+      </div>
+    </b-modal>
   </section>
 </template>
 
@@ -408,17 +542,21 @@ import {
 } from "@/assets/js/utils";
 import CONST from "@/assets/js/const";
 import QRCode from "qrcode";
+import jsqrcode from "./assets/js/jsqrcode";
 import ClipboardJS from "clipboard";
 import { Base64 } from "js-base64";
 import ModalServer from "@/components/modalServer";
 import ModalSubscription from "@/components/modalSuscription";
 import { waitingConnected } from "@/assets/js/networkInspect";
 import axios from "@/plugins/axios";
+
 export default {
   name: "Node",
   components: { ModalSubscription, ModalServer },
   data() {
     return {
+      importWhat: "",
+      showModalImport: false,
       currentPage: { servers: 1, subscriptions: 1 },
       tableData: {
         servers: [],
@@ -474,6 +612,9 @@ export default {
     this.clipboard.destroy();
   },
   mounted() {
+    document
+      .querySelector("#QRCodeImport")
+      .addEventListener("change", this.handleFileChange, false);
     this.clipboard = new ClipboardJS(".sharingAddressTag");
     this.clipboard.on("success", e => {
       this.$buefy.toast.open({
@@ -503,6 +644,77 @@ export default {
     });
   },
   methods: {
+    handleModalImportShow() {
+      this.$refs.importInput.focus();
+    },
+    handleImportEnter(event) {
+      if (event.keyCode !== 13) {
+        return;
+      }
+      this.handleClickImportConfirm();
+    },
+    handleFileChange(e) {
+      const that = this;
+      const file = e.target.files[0];
+      let elem = document.querySelector("#QRCodeImport");
+      // eslint-disable-next-line no-self-assign
+      elem.outerHTML = elem.outerHTML;
+      this.$nextTick(() => {
+        document
+          .querySelector("#QRCodeImport")
+          .addEventListener("change", this.handleFileChange, false);
+      });
+      // console.log(file);
+      if (!file.type.match(/image\/.*/)) {
+        this.$buefy.toast.open({
+          message: this.$t("import.qrcodeError"),
+          type: "is-warning",
+          position: "is-top",
+          queue: false
+        });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        // target.result 该属性表示目标对象的DataURL
+        // console.log(e.target.result);
+        const file = e.target.result;
+        jsqrcode.callback = result => {
+          console.log(result);
+          if (result !== "error decoding QR Code") {
+            that.handleClickImportConfirm(result);
+          } else {
+            that.$buefy.toast.open({
+              message: that.$t("import.qrcodeError"),
+              type: "is-warning",
+              position: "is-top",
+              queue: false
+            });
+          }
+        };
+        jsqrcode.decode(file);
+      };
+      reader.readAsDataURL(file);
+    },
+    sortNumberServers(a, b, isAsc) {
+      if (!isAsc) {
+        return a.servers.length < b.servers.length ? 1 : -1;
+      }
+      return a.servers.length > b.servers.length ? 1 : -1;
+    },
+    sortping(a, b, isAsc) {
+      if (isNaN(parseInt(a.pingLatency))) {
+        return 1;
+      }
+      if (isNaN(parseInt(b.pingLatency))) {
+        return -1;
+      }
+      if (!isAsc) {
+        return parseInt(a.pingLatency) < parseInt(b.pingLatency) ? 1 : -1;
+      } else {
+        return parseInt(a.pingLatency) > parseInt(b.pingLatency) ? 1 : -1;
+      }
+    },
     updateConnectView(runningState) {
       if (!runningState) {
         runningState = this.runningState;
@@ -563,50 +775,48 @@ export default {
         this.tab = serversOffset;
       }
     },
+    handleClickImportQRCode() {
+      document.querySelector("#QRCodeImport").click();
+    },
     handleClickImport() {
-      const that = this;
-      this.$buefy.dialog.prompt({
-        message: this.$t("import.message"),
-        inputAttrs: {
-          type: "text",
-          value: ""
-        },
-        trapFocus: true,
-        onConfirm: value => {
-          return that
-            .$axios({
-              url: apiRoot + "/import",
-              method: "post",
-              data: {
-                url: value
-              }
-            })
-            .then(res => {
-              if (res.data.code === "SUCCESS") {
-                this.tableData = res.data.data.touch;
-                this.runningState = {
-                  running: res.data.data.running
-                    ? this.$t("common.isRunning")
-                    : this.$t("common.notRunning"),
-                  connectedServer: this.tableData.connectedServer,
-                  lastConnectedServer: null
-                };
-                this.updateConnectView();
-                this.$buefy.toast.open({
-                  message: this.$t("common.success"),
-                  type: "is-primary",
-                  position: "is-top",
-                  queue: false
-                });
-              } else {
-                this.$buefy.toast.open({
-                  message: res.data.message,
-                  type: "is-warning",
-                  position: "is-top",
-                  queue: false
-                });
-              }
-            });
+      this.showModalImport = true;
+    },
+    handleClickImportConfirm(value) {
+      if (typeof value != "string") {
+        value = null;
+      }
+      return this.$axios({
+        url: apiRoot + "/import",
+        method: "post",
+        data: {
+          url: value || this.importWhat
+        }
+      }).then(res => {
+        if (res.data.code === "SUCCESS") {
+          this.tableData = res.data.data.touch;
+          this.runningState = {
+            running: res.data.data.running
+              ? this.$t("common.isRunning")
+              : this.$t("common.notRunning"),
+            connectedServer: this.tableData.connectedServer,
+            lastConnectedServer: null
+          };
+          this.updateConnectView();
+          this.$buefy.toast.open({
+            message: this.$t("common.success"),
+            type: "is-primary",
+            position: "is-top",
+            queue: false
+          });
+          this.showModalImport = false;
+          this.importWhat = "";
+        } else {
+          this.$buefy.toast.open({
+            message: res.data.message,
+            type: "is-warning",
+            position: "is-top",
+            queue: false
+          });
         }
       });
     },
@@ -847,7 +1057,7 @@ export default {
                         </div>
                     </section>
                     <footer class="modal-card-foot" style="justify-content: center">
-                        <a class="is-link" href="https://github.com/mzz2017/v2rayA" target="_blank">
+                        <a class="is-link" href="https://github.com/v2rayA/v2rayA" target="_blank">
                           <img class="leave-right" src="https://img.shields.io/github/stars/mzz2017/v2rayA.svg?style=social" alt="stars">
                           <img class="leave-right" src="https://img.shields.io/github/forks/mzz2017/v2rayA.svg?style=social" alt="forks">
                           <img class="leave-right" src="https://img.shields.io/github/watchers/mzz2017/v2rayA.svg?style=social" alt="watchers">
@@ -868,7 +1078,7 @@ export default {
               { errorCorrectionLevel: "H" },
               function(error) {
                 if (error) console.error(error);
-                console.log("QRCode has been generated successfully!");
+                // console.log("QRCode has been generated successfully!");
               }
             );
             let targets = document.querySelectorAll(".sharingAddressTag");
@@ -975,7 +1185,7 @@ export default {
           actionText: this.$t("operations.helpManual"),
           onAction: () => {
             window.open(
-              "https://github.com/mzz2017/v2rayA#%E4%BD%BF%E7%94%A8",
+              "https://github.com/v2rayA/v2rayA#%E4%BD%BF%E7%94%A8",
               "_blank"
             );
           }
@@ -1023,21 +1233,26 @@ export default {
 td {
   font-size: 0.9em;
 }
+
 .node-section {
   margin-top: 1rem;
+
   .iconfont {
     margin-right: 0.1em;
   }
+
   .operate-box {
     > * {
       margin-right: 0.5rem;
     }
   }
 }
+
 .card {
   max-width: 500px;
   margin: auto;
 }
+
 .ping-latency {
   font-size: 0.8em;
 }
@@ -1045,8 +1260,17 @@ td {
 
 <style lang="scss">
 @import "~bulma/sass/utilities/all";
+
 #toolbar {
-  padding: 0.75em 0.75em 0;
+  .field.is-grouped .field:not(:last-child) {
+    @media screen and (max-width: 450px) {
+      margin-right: 0.3rem;
+    }
+  }
+  .field.is-grouped.is-grouped-multiline:last-child {
+    margin-bottom: 0;
+  }
+  padding: 0.75em 0.75em;
   margin-bottom: 1rem;
   position: sticky;
   top: 65px;
@@ -1055,24 +1279,30 @@ td {
   width: 100%;
   border-radius: 3px;
   pointer-events: none;
+
   * {
     pointer-events: auto;
   }
+
   .right {
     position: absolute;
     right: 0.75rem;
     top: 0.75em;
-    max-width: 50%;
+    /*max-width: 70%;*/
   }
+
   transition: all 200ms linear;
+
   button {
     transition: all 100ms ease-in-out;
   }
 }
+
 .tabs {
   .icon + span {
     color: #ff6719; //方案1
   }
+
   .icon {
     display: none; //方案1
     margin: 0 0 0 -0.5em !important;
@@ -1083,12 +1313,14 @@ td {
     }
   }
 }
+
 tr.is-connected {
   //$c: #23d160;
   $c: #bbdefb;
   background: $c;
   color: findColorInvert($c);
 }
+
 @keyframes loading-rotate {
   from {
     transform: rotate(0deg);
@@ -1097,6 +1329,7 @@ tr.is-connected {
     transform: rotate(360deg);
   }
 }
+
 .not-show {
   opacity: 0;
   pointer-events: none !important;
@@ -1110,20 +1343,25 @@ tr.is-connected {
   margin-right: 0 !important;
   border-right: 0 !important;
 }
+
 .not-display {
   display: none;
 }
+
 table td,
 table th {
   vertical-align: middle !important;
 }
+
 .dialog .mdi-.iconfont.icon-alert {
   font-size: 40px;
 }
+
 .qrcode#canvas {
   min-height: 300px !important;
   min-width: 300px !important;
 }
+
 $coverBackground: rgba(0, 0, 0, 0.6);
 .tag-cover {
   height: 100%;
@@ -1138,6 +1376,7 @@ $coverBackground: rgba(0, 0, 0, 0.6);
   line-height: 22px;
   user-select: none;
 }
+
 #tag-cover-text {
   color: findColorInvert($coverBackground);
   position: absolute;
@@ -1151,5 +1390,11 @@ $coverBackground: rgba(0, 0, 0, 0.6);
   z-index: 1;
   font-size: 12px;
   pointer-events: none;
+}
+.mobile-small {
+  @media screen and (max-width: 450px) {
+    border-radius: 2px;
+    font-size: 0.75rem;
+  }
 }
 </style>

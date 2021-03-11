@@ -2,31 +2,23 @@ package shadowsocksr
 
 import (
 	"fmt"
+	"github.com/v2rayA/v2rayA/core/vmessInfo"
+	"github.com/v2rayA/v2rayA/extra/proxy/ssr"
+	"github.com/v2rayA/v2rayA/plugin"
 	"log"
 	"net/url"
-	"strconv"
 	"strings"
-	"time"
-	"github.com/mzz2017/v2rayA/common/netTools/ports"
-	"github.com/mzz2017/v2rayA/core/vmessInfo"
-	"github.com/mzz2017/v2rayA/extra/proxy/socks5"
-	"github.com/mzz2017/v2rayA/extra/proxy/ssr"
-	"github.com/mzz2017/v2rayA/plugin"
 )
 
 type SSR struct {
-	c         chan interface{}
-	closed    chan interface{}
-	localPort int
+	s *plugin.Server
 }
 type Params struct {
 	Cipher, Passwd, Address, Port, Obfs, ObfsParam, Protocol, ProtocolParam string
 }
 
 func init() {
-	plugin.RegisterPlugin("ss", NewSSRPlugin)
 	plugin.RegisterPlugin("ssr", NewSSRPlugin)
-	plugin.RegisterPlugin("shadowsocks", NewSSRPlugin)
 	plugin.RegisterPlugin("shadowsocksr", NewSSRPlugin)
 }
 
@@ -36,10 +28,7 @@ func NewSSRPlugin(localPort int, v vmessInfo.VmessInfo) (plugin plugin.Plugin, e
 	return
 }
 
-func (self *SSR) Serve(localPort int, v vmessInfo.VmessInfo) (err error) {
-	self.c = make(chan interface{}, 0)
-	self.closed = make(chan interface{}, 0)
-	self.localPort = localPort
+func ParseVmess(v vmessInfo.VmessInfo) (s string, err error) {
 	params := Params{
 		Cipher:        v.Net,
 		Passwd:        v.ID,
@@ -73,62 +62,22 @@ func (self *SSR) Serve(localPort int, v vmessInfo.VmessInfo) (err error) {
 	q.Set("protocol", params.Protocol)
 	q.Set("protocol_param", params.ProtocolParam)
 	u.RawQuery = q.Encode()
-	p, _ := ssr.NewProxy(u.String())
-	local, err := socks5.NewSocks5Server("socks5://127.0.0.1:"+strconv.Itoa(localPort), p)
+	s = u.String()
+	return
+}
+
+func (self *SSR) Serve(localPort int, v vmessInfo.VmessInfo) (err error) {
+	self.s = plugin.NewServer(localPort)
+	s, err := ParseVmess(v)
 	if err != nil {
 		return
 	}
-	go func() {
-		go func() {
-			e := local.ListenAndServe()
-			if e != nil {
-				err = e
-			}
-		}()
-		<-self.c
-		if local.(*socks5.Socks5).TcpListener != nil {
-			close(self.closed)
-			_ = local.(*socks5.Socks5).TcpListener.Close()
-		}
-	}()
-	//等待100ms的error
-	time.Sleep(100 * time.Millisecond)
-	return err
+	p, _ := ssr.NewProxy(s)
+	return self.s.Serve(p, "socks5")
 }
 
 func (self *SSR) Close() error {
-	if self.c == nil {
-		return newError("close fail: shadowsocksr not running")
-	}
-	if len(self.c) > 0 {
-		return newError("close fail: duplicate close")
-	}
-	self.c <- nil
-	self.c = nil
-	time.Sleep(100 * time.Millisecond)
-	start := time.Now()
-out:
-	for {
-		select {
-		case <-self.closed:
-			break out
-		default:
-		}
-		var o bool
-		o, _, err := ports.IsPortOccupied([]string{strconv.Itoa(self.localPort) + ":tcp"})
-		if err != nil {
-			return err
-		}
-		if !o {
-			break
-		}
-		if time.Since(start) > 3*time.Second {
-			log.Println("SSR.Close: timeout", self.localPort)
-			return newError("SSR.Close: timeout")
-		}
-		time.Sleep(1000 * time.Millisecond)
-	}
-	return nil
+	return self.s.Close()
 }
 
 func (self *SSR) SupportUDP() bool {

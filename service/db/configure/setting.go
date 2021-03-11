@@ -1,6 +1,6 @@
 package configure
 
-import "github.com/mzz2017/v2rayA/core/ipforward"
+import "github.com/v2rayA/v2rayA/core/ipforward"
 
 type Setting struct {
 	PacMode                    PacMode         `json:"pacMode"`
@@ -10,10 +10,11 @@ type Setting struct {
 	TcpFastOpen                DefaultYesNo    `json:"tcpFastOpen"`
 	MuxOn                      DefaultYesNo    `json:"muxOn"`
 	Mux                        int             `json:"mux"`
-	Transparent                TransparentMode `json:"transparent"` //当透明代理开启时将覆盖端口单独的配置
+	Transparent                TransparentMode `json:"transparent"`
 	IpForward                  bool            `json:"ipforward"`
 	EnhancedMode               bool            `json:"enhancedMode"`
 	AntiPollution              Antipollution   `json:"antipollution"`
+	DnsForceMode               bool            `json:"dnsForceMode"`
 }
 
 func NewSetting() (setting *Setting) {
@@ -29,6 +30,7 @@ func NewSetting() (setting *Setting) {
 		IpForward:                  ipforward.IsIpForwardOn(),
 		EnhancedMode:               false,
 		AntiPollution:              AntipollutionClosed,
+		DnsForceMode:               false,
 	}
 
 }

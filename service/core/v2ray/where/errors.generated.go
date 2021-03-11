@@ -1,4 +1,4 @@
-package trojan
+package where
 
 import "v2ray.com/core/common/errors"
 

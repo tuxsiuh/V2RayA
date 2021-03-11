@@ -1,20 +1,18 @@
 package service
 
 import (
-	"github.com/mzz2017/v2rayA/core/v2ray"
-	"github.com/mzz2017/v2rayA/core/v2ray/asset/gfwlist"
-	"github.com/mzz2017/v2rayA/db/configure"
-	"github.com/mzz2017/v2rayA/global"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/core/v2ray/asset/gfwlist"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/plugin"
+	"io/ioutil"
 	"log"
+	"os"
 )
 
 func Disconnect() (err error) {
-	global.Plugins.CloseAll()
+	plugin.GlobalPlugins.CloseAll()
 	err = v2ray.StopV2rayService()
-	if err != nil {
-		return
-	}
-	err = v2ray.DisableV2rayService()
 	if err != nil {
 		return
 	}
@@ -35,6 +33,13 @@ func checkAssetsExist(setting *configure.Setting) error {
 	return nil
 }
 
+func checkResolvConf() {
+	const resolvConf = "/etc/resolv.conf"
+	if _, err := os.Stat(resolvConf); os.IsNotExist(err) {
+		ioutil.WriteFile(resolvConf, []byte("nameserver 223.5.5.5"), 0644)
+	}
+}
+
 func Connect(which *configure.Which) (err error) {
 	log.Println("Connect: begin")
 	defer log.Println("Connect: done")
@@ -45,6 +50,7 @@ func Connect(which *configure.Which) (err error) {
 	if which == nil {
 		return newError("which can not be nil")
 	}
+	checkResolvConf()
 	//定位Server
 	tsr, err := which.LocateServer()
 	if err != nil {
@@ -66,8 +72,6 @@ func Connect(which *configure.Which) (err error) {
 	}
 	//保存节点连接成功的结果
 	err = configure.SetConnect(which)
-	if err != nil {
-		return
-	}
-	return v2ray.EnableV2rayService()
+	//v2ray.EnableV2rayService()
+	return
 }

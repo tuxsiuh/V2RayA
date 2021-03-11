@@ -2,13 +2,13 @@ package service
 
 import (
 	"github.com/json-iterator/go"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/nodeData"
+	"github.com/v2rayA/v2rayA/core/vmessInfo"
 	"log"
 	"net/url"
 	"regexp"
 	"strings"
-	"github.com/mzz2017/v2rayA/common"
-	"github.com/mzz2017/v2rayA/core/nodeData"
-	"github.com/mzz2017/v2rayA/core/vmessInfo"
 )
 
 /*
@@ -44,15 +44,33 @@ func ResolveVmessURL(vmess string) (data *nodeData.NodeData, err error) {
 			return
 		}
 		q := u.Query()
+		ps := q.Get("remarks")
+		if ps == "" {
+			ps = q.Get("remark")
+		}
+		obfs := q.Get("obfs")
+		obfsParam := q.Get("obfsParam")
+		path := q.Get("path")
+		if obfs == "kcp" || obfs == "mkcp" {
+			m := make(map[string]string)
+			//迎合v2rayN的格式定义
+			_ = jsoniter.Unmarshal([]byte(obfsParam), &m)
+			path = m["seed"]
+			obfsParam = ""
+		}
+		aid := q.Get("alterId")
+		if aid == "" {
+			aid = q.Get("aid")
+		}
 		info = vmessInfo.VmessInfo{
 			ID:            subMatch[1],
 			Add:           subMatch[2],
 			Port:          subMatch[3],
-			Ps:            q.Get("remarks"),
-			Host:          q.Get("obfsParam"),
-			Path:          q.Get("path"),
-			Net:           q.Get("obfs"),
-			Aid:           q.Get("aid"),
+			Ps:            ps,
+			Host:          obfsParam,
+			Path:          path,
+			Net:           obfs,
+			Aid:           aid,
 			TLS:           map[string]string{"1": "tls"}[q.Get("tls")],
 			V:             "2",
 			AllowInsecure: false,
@@ -72,7 +90,7 @@ func ResolveVmessURL(vmess string) (data *nodeData.NodeData, err error) {
 		info.Host = ""
 	}
 	if info.Aid == "" {
-		info.Aid = "6"
+		info.Aid = "1"
 	}
 	data = new(nodeData.NodeData)
 	data.VmessInfo = info
@@ -88,87 +106,82 @@ func ResolveSSURL(u string) (data *nodeData.NodeData, err error) {
 		return
 	}
 	// 该函数尝试对ss://链接进行解析
-	resolveFormat := func(content string) (subMatch []string, ok bool) {
-		// 尝试按ss://method:password@server:port#name格式进行解析
-		content = strings.TrimSuffix(content, "#")
-		re := regexp.MustCompile(`(.+):(.+)@(.+?):(\d+)(#.+)?`)
-		subMatch = re.FindStringSubmatch(content)
-		if len(subMatch) == 0 {
-			// 尝试按ss://BASE64(method:password)@server:port#name格式进行解析
-			re = regexp.MustCompile(`(.+)()@(.+?):(\d+)(#.+)?`) //留个空组，确保subMatch长度统一
-			subMatch = re.FindStringSubmatch(content)
-			if len(subMatch) > 0 {
-				raw, err := common.Base64StdDecode(subMatch[1])
-				if err != nil {
-					return
-				}
-				as := strings.Split(raw, ":")
-				subMatch[1], subMatch[2] = as[0], as[1]
+	resolveFormat := func(content string) (v *vmessInfo.VmessInfo, ok bool) {
+		// 尝试按ss://BASE64(method:password)@server:port/?plugin=xxxx#name格式进行解析
+		u, err := url.Parse(content)
+		if err != nil {
+			return nil, false
+		}
+		username := u.User.String()
+		username, _ = common.Base64URLDecode(username)
+		arr := strings.Split(username, ":")
+		if len(arr) != 2 {
+			return nil, false
+		}
+		method := arr[0]
+		password := arr[1]
+		var obfs, path, host string
+		plugin := u.Query().Get("plugin")
+		arr = strings.Split(plugin, ";")
+		for i := 1; i < len(arr); i++ {
+			a := strings.Split(arr[i], "=")
+			switch a[0] {
+			case "obfs":
+				obfs = a[1]
+			case "obfs-path":
+				path = a[1]
+			case "obfs-host":
+				host = a[1]
 			}
 		}
-		if subMatch == nil {
-			return
-		}
-		if len(subMatch[5]) > 0 {
-			subMatch[5] = subMatch[5][1:]
-		}
-		return subMatch, len(subMatch) > 0
-	}
-	content := u[5:]
-	//看是不是有#，有的话说明name没有被base64
-	sp := strings.Split(content, "#")
-	var name string
-	if len(sp) == 2 {
-		content = sp[0]
-		var e error
-		name, e = common.Base64URLDecode(sp[1])
-		if e != nil {
-			name, e = common.Base64StdDecode(sp[1])
-		}
-		_name, e := url.QueryUnescape(name)
-		if e == nil {
-			name = _name
-		}
+		return &vmessInfo.VmessInfo{
+			Net:      method,
+			ID:       password,
+			Add:      u.Hostname(),
+			Port:     u.Port(),
+			Ps:       u.Fragment,
+			Type:     obfs,
+			Path:     path,
+			Host:     host,
+			Protocol: "ss",
+		}, true
 	}
 	var (
-		subMatch []string
-		ok       bool
+		v  *vmessInfo.VmessInfo
+		ok bool
 	)
+	content := u
 	// 尝试解析ss://链接，失败则先base64解码
-	if subMatch, ok = resolveFormat(content); !ok {
+	if v, ok = resolveFormat(content); !ok {
 		// 进行base64解码，并unmarshal到VmessInfo上
-		content, err = common.Base64StdDecode(content)
+		t := content[5:]
+		var l, r string
+		if ind := strings.Index(t, "#"); ind > -1 {
+			l = t[:ind]
+			r = t[ind+1:]
+		} else {
+			l = t
+		}
+		l, err = common.Base64StdDecode(l)
 		if err != nil {
-			content, err = common.Base64URLDecode(content)
+			l, err = common.Base64URLDecode(l)
 			if err != nil {
 				return
 			}
 		}
-		subMatch, ok = resolveFormat(content)
+		t = "ss://" + l
+		if len(r) > 0 {
+			t += "#" + r
+		}
+		v, ok = resolveFormat(t)
 	}
 	if !ok {
 		err = newError("unrecognized ss address")
 		return
 	}
-	info := vmessInfo.VmessInfo{
-		Protocol: "ss",
-		Net:      subMatch[1],
-		ID:       subMatch[2],
-		Add:      subMatch[3],
-		Port:     subMatch[4],
-		Ps:       subMatch[5],
-	}
-	if len(name) > 0 {
-		info.Ps = name
-	}
 	// 填充模板并处理结果
 	data = new(nodeData.NodeData)
-	//t, err := v2ray.NewTemplateFromVmessInfo(info)
-	//if err == nil {
-	//	b := t.ToConfigBytes()
-	//	data.Config = string(b)
-	//}
-	data.VmessInfo = info
+	data.VmessInfo = *v
 	return
 }
 
@@ -260,12 +273,19 @@ func ResolveTrojanURL(u string) (data *nodeData.NodeData, err error) {
 	}
 	allowInsecure := t.Query().Get("allowInsecure")
 	data = new(nodeData.NodeData)
+	host := t.Query().Get("peer")
+	if host == "" {
+		host = t.Query().Get("sni")
+	}
+	if host == "" {
+		host = t.Query().Get("host")
+	}
 	data.VmessInfo = vmessInfo.VmessInfo{
 		Ps:            t.Fragment,
 		Add:           t.Hostname(),
 		Port:          t.Port(),
 		ID:            t.User.String(),
-		Host:          t.Query().Get("peer"),
+		Host:          host,
 		AllowInsecure: allowInsecure == "1" || allowInsecure == "true",
 		Protocol:      "trojan",
 	}

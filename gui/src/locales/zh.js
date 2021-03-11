@@ -88,8 +88,9 @@ export default {
     autoUpdateSub: "自动更新订阅",
     autoUpdateGfwlist: "自动更新GFWList",
     preferModeWhenUpdate: "解析订阅链接/更新时优先使用",
-    ipForwardOn: "开启IP转发",
+    ipForwardOn: "开启局域网共享",
     enhancedModeOn: "开启增强模式",
+    dnsForceModeOn: "关闭DNS分流",
     concurrency: "最大并发数",
     options: {
       global: "代理所有流量",
@@ -99,9 +100,9 @@ export default {
       gfwlist: "GFWList",
       sameAsPacMode: "与规则端口所选模式一致",
       customRouting: "自定义路由规则",
-      antiDnsHijack: "仅防止DNS劫持",
-      forwardDnsRequest: "防止DNS污染：转发DNS请求",
-      doh: "防止DNS污染：DoH(DNS-over-HTTPS)",
+      antiDnsHijack: "仅防止DNS劫持(快速)",
+      forwardDnsRequest: "转发DNS请求",
+      doh: "DoH(DNS-over-HTTPS)",
       default: "保持系统默认",
       on: "启用",
       off: "关闭",
@@ -113,22 +114,24 @@ export default {
     messages: {
       gfwlist: "该时间是指本地文件最后修改时间，因此可能会领先最新版本",
       transparentProxy:
-        "全局代理开启后，无需经过额外设置，任何TCP、UDP流量均会经过V2Ray。另外，如需作为网关使得连接本机的其他主机也享受代理，请勾选“开启IP转发”。注：非增强模式下本机docker容器不会走代理。",
+        "全局代理开启后，无需经过额外设置，任何TCP流量均会经过V2RayA。另外，如需作为网关使得连接本机的其他主机也享受代理，请勾选“开启局域网共享”。注：非增强模式下本机docker容器不会走代理。",
       pacMode:
         "该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。",
       preventDnsSpoofing:
         "如果透明代理出现问题，可尝试将'防止DNS污染'选为'关闭'，或打开增强模式(v0.7.0.2+)。" +
         "★转发DNS查询: 通过代理服务器转发DNS请求。" +
         "★DoH(v2ray-core: 4.22.0+): DNS over HTTPS，建议选择较快且稳定的DoH服务提供商。" +
-        "★增强模式(v0.7.0.2+)会取代通过iptables转发dns请求的方式，转而使用DnsPoison方式应对被污染的域名。",
+        "★增强模式(v0.7.0.2+)更快速，不支持udp和ipv6。" +
+        "★关闭DNS分流(v1.1.3+)不对国内站点的DNS查询进行分流(可能会影响国内站点访问速度)",
       tcpFastOpen:
-        "简化TCP握手流程以加速建立连接，可能会增加封包的特征。当前仅支持vmess节点。",
+        "简化TCP握手流程以加速建立连接，可能会增加封包的特征。若系统不支持可能会导致无法正常连接。",
       mux:
         "复用TCP连接以减少握手次数，但会影响吞吐量大的使用场景，如观看视频、下载、测速。当前仅支持vmess节点。可能会增加特征造成断流。",
       confirmEgressPorts: `<p>您正在对不同子网下的机器设置透明代理，请确认不走代理的出方向端口。</p>
                           <p>当前设置的端口白名单为：</p>
                           <p>TCP: {tcpPorts}</p>
-                          <p>UDP: {udpPorts}</p>`
+                          <p>UDP: {udpPorts}</p>`,
+      xtlsNotWithWs: `xtls无法和websocket共存`
     }
   },
   customAddressPort: {
@@ -211,10 +214,12 @@ export default {
     wireguardObfuscation: "伪装为WireGuard数据包",
     hostObfuscation: "域名(host)",
     pathObfuscation: "路径(path)",
+    seedObfuscation: "混淆种子",
     password: "密码"
   },
   import: {
-    message: "填入vmess/ss/ssr/订阅地址："
+    message: "填入节点链接或订阅地址：",
+    qrcodeError: "找不到有效的二维码，请重新尝试"
   },
   delete: {
     title: "确认删除",
@@ -236,7 +241,7 @@ export default {
           <p class="about-small">其他端口：</p>
           <p class="about-small">32345: tproxy，透明代理所需 </p>
           <p class="about-small">32346: 插件协议端口，如trojan、ssr和pingtunnel</p>
-          <p>在使用中如果发现任何问题，欢迎<a href="https://github.com/mzz2017/v2rayA/issues">提出issue</a>。</p>`,
+          <p>在使用中如果发现任何问题，欢迎<a href="https://github.com/v2rayA/v2rayA/issues">提出issue</a>。</p>`,
   axios: {
     messages: {
       optimizeBackend: "您是否需要调整服务端地址？",
@@ -248,7 +253,7 @@ export default {
     },
     urls: {
       usage:
-        "https://github.com/mzz2017/v2rayA/wiki/%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95"
+        "https://github.com/v2rayA/v2rayA/wiki/%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95"
     }
   },
   routingA: {

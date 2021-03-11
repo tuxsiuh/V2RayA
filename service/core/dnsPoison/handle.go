@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcapgo"
-	"github.com/mzz2017/v2rayA/common/netTools"
+	"github.com/v2rayA/v2rayA/common/netTools"
 	"golang.org/x/net/dns/dnsmessage"
 	"log"
 	"net"
@@ -208,9 +208,9 @@ func (interfaceHandle *handle) handlePacket(packet gopacket.Packet, ifname strin
 				case AgainstBlacklist:
 					log.Println("dnsPoison["+ifname+"]: [against]", r.domain, "proof:", dm+msg)
 				case AddBlacklist:
-					log.Println("dnsPoison["+ifname+"]: {add blacklist}", r.domain)
+					log.Println("dnsPoison["+ifname+"]: {add blocklist}", r.domain)
 				case RemoveBlacklist:
-					log.Println("dnsPoison["+ifname+"]: {remove blacklist}", r.domain)
+					log.Println("dnsPoison["+ifname+"]: {remove blocklist}", r.domain)
 				}
 			}
 		}
@@ -242,7 +242,7 @@ func (interfaceHandle *handle) poison(m *dnsmessage.Message, lAddr, lPort, rAddr
 	go func(m *dnsmessage.Message) {
 		packed, _ := m.Pack()
 		lport, _ := strconv.Atoi(lPort.String())
-		conn, err := newDialer(lAddr.String(), uint32(lport), 30*time.Second).Dial("udp", rAddr.String()+":"+rPort.String())
+		conn, err := newDialer(lAddr.String(), uint32(lport), 30*time.Second).Dial("udp", net.JoinHostPort(rAddr.String(), rPort.String()))
 		if err != nil {
 			return
 		}

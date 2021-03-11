@@ -7,17 +7,17 @@
         </b-navbar-item>
       </template>
       <template slot="start">
-        <b-navbar-item tag="div">
-          {{ $t("common.v2rayCoreStatus") }}：
-          <b-tag
-            id="statusTag"
-            :type="statusMap[runningState.running]"
-            @mouseenter.native="handleOnStatusMouseEnter"
-            @mouseleave.native="handleOnStatusMouseLeave"
-            @click.native="handleClickStatus"
-            >{{ coverStatusText ? coverStatusText : runningState.running }}
-          </b-tag>
-        </b-navbar-item>
+        <!--        <b-navbar-item tag="div">-->
+        <!--          {{ $t("common.v2rayCoreStatus") }}：-->
+        <!--          <b-tag-->
+        <!--            id="statusTag"-->
+        <!--            :type="statusMap[runningState.running]"-->
+        <!--            @mouseenter.native="handleOnStatusMouseEnter"-->
+        <!--            @mouseleave.native="handleOnStatusMouseLeave"-->
+        <!--            @click.native="handleClickStatus"-->
+        <!--            >{{ coverStatusText ? coverStatusText : runningState.running }}-->
+        <!--          </b-tag>-->
+        <!--        </b-navbar-item>-->
       </template>
 
       <template slot="end">
@@ -142,8 +142,10 @@ export default {
   created() {
     console.log("app created");
     let ba = localStorage.getItem("backendAddress");
-    let u = parseURL(ba);
-    document.title = `v2rayA - ${u.host}:${u.port}`;
+    if (ba) {
+      let u = parseURL(ba);
+      document.title = `v2rayA - ${u.host}:${u.port}`;
+    }
     this.$axios({
       url: apiRoot + "/version"
     }).then(res => {
@@ -181,6 +183,7 @@ export default {
         } else {
           localStorage["iptablesMode"] = res.data.data.iptablesMode;
           localStorage["dohValid"] = res.data.data.dohValid;
+          localStorage["vlessValid"] = res.data.data.vlessValid;
         }
       }
     });
@@ -226,7 +229,7 @@ export default {
                         ${this.$t(`about`)}
                     </section>
                     <footer class="modal-card-foot">
-                        <a class="is-link" href="https://github.com/mzz2017/v2rayA" target="_blank">
+                        <a class="is-link" href="https://github.com/v2rayA/v2rayA" target="_blank">
                           <img class="leave-right" src="https://img.shields.io/github/stars/mzz2017/v2rayA.svg?style=social" alt="stars">
                           <img class="leave-right" src="https://img.shields.io/github/forks/mzz2017/v2rayA.svg?style=social" alt="forks">
                           <img class="leave-right" src="https://img.shields.io/github/watchers/mzz2017/v2rayA.svg?style=social" alt="watchers">

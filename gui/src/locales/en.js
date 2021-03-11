@@ -88,8 +88,9 @@ export default {
     autoUpdateSub: "Automatically Update Subscriptions",
     autoUpdateGfwlist: "Automatically Update GFWList",
     preferModeWhenUpdate: "Mode when Upadate Subscriptions and GFWList",
-    ipForwardOn: "IP Forward",
-    enhancedModeOn: "Enhanced Mode",
+    ipForwardOn: "Share in LAN",
+    enhancedModeOn: "Enhanced",
+    dnsForceModeOn: "Disable CDS",
     concurrency: "Concurrency",
     options: {
       global: "Proxy All Traffic",
@@ -99,9 +100,9 @@ export default {
       gfwlist: "Proxy Only GFWList",
       sameAsPacMode: "The Same as the Rule Port",
       customRouting: "Customized Routing",
-      antiDnsHijack: "Prevent DNS Hijack Only",
-      forwardDnsRequest: "Prevent DNS Spoofing: Forward DNS Request",
-      doh: "Prevent DNS Spoofing: DoH(dns-over-https)",
+      antiDnsHijack: "Prevent DNS Hijack Only (fast)",
+      forwardDnsRequest: "Forward DNS Request",
+      doh: "DoH(dns-over-https)",
       default: "Keep Default",
       on: "On",
       off: "Off",
@@ -114,22 +115,24 @@ export default {
       gfwlist:
         "Based on modified time of file which sometimes is after latest version online.",
       transparentProxy:
-        "If transparent proxy on, no extra configure needed and all TCP and UDP traffic except from docker will pass through the proxy. Providing proxy service to other computers as the gateway should make option 'IP forward' on.",
+        "If transparent proxy on, no extra configure needed and all TCP traffic will pass through the v2rayA. Providing proxy service to other computers as the gateway should make option 'Share in LAN' on.",
       pacMode: `Here you can set the splitting traffic rule of rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
       preventDnsSpoofing:
         "If there is a problem with transparent proxy, try setting 'Prevent DNS Spoofing' as 'Off' or turn on 'Enhanced Mode' (v0.7.0.2+)." +
         "★Forward DNS Request: DNS requests will be forwarded by proxy server." +
         "★DoH(dns-over-https, v2ray-core: 4.22.0+): Stable and fast DoH services are suggested." +
-        "★Enhanced Mode(v0.7.0.2+) will replace the method of forwarding dns-query using iptables with DnsPoison method to deal with contaminated domain names.",
+        "★Enhanced Mode(v0.7.0.2+) faster but not support udp and ipv6" +
+        "★Disable CDS(v1.1.3+, Disable China Domain Shunt): Do not shunt DNS query of China Domains",
       tcpFastOpen:
-        "Simplify TCP handshake process to speed up connection establishment. Risk of emphasizing characteristics of packets exists. Support vmess only now.",
+        "Simplify TCP handshake process to speed up connection establishment. Risk of emphasizing characteristics of packets exists. It may cause failed to connect if your system does not support it.",
       mux:
         "Multiplexing TCP connections to reduce the number of handshake, but it will affect the use cases with high throughput, such as watching videos, downloading, and test speed. " +
         "Risk of emphasizing characteristics of packets exists. Support vmess only now.",
       confirmEgressPorts: `<p>You are setting up transparent proxy across LANs, confirm egress port whitelist.</p>
                           <p>Whitelist:</p>
                           <p>TCP: {tcpPorts}</p>
-                          <p>UDP: {udpPorts}</p>`
+                          <p>UDP: {udpPorts}</p>`,
+      xtlsNotWithWs: `xtls cannot work with websocket`
     }
   },
   customAddressPort: {
@@ -212,13 +215,15 @@ export default {
     wireguardObfuscation: "Obfuscated as WireGuard Packets",
     hostObfuscation: "Host",
     pathObfuscation: "Path",
+    seedObfuscation: "Seed",
     password: "Password"
   },
   configureSubscription: {
     title: "Configure Subscription"
   },
   import: {
-    message: "Input a vmess/ss/ssr/subscription address:"
+    message: "Input a server link or subscription address:",
+    qrcodeError: "Failed to find a valid QRCode, please try again"
   },
   delete: {
     title: "Confirm to DELETE",
@@ -244,7 +249,7 @@ export default {
           <p class="about-small">32345: tproxy, needed by transparent proxy </p>
           <p class="about-small">32346: port of plugins such as trojan, ssr and pingtunnel</p>
           <p>All data is stored in local instead of cloud. </p>
-          <p>Problems found during use can be reported at <a href="https://github.com/mzz2017/v2rayA/issues">issues</a>.</p>`,
+          <p>Problems found during use can be reported at <a href="https://github.com/v2rayA/v2rayA/issues">issues</a>.</p>`,
   axios: {
     messages: {
       optimizeBackend: "Adjust v2rayA service address？",
@@ -256,7 +261,7 @@ export default {
       ]
     },
     urls: {
-      usage: "https://github.com/mzz2017/v2rayA/wiki/Usage"
+      usage: "https://github.com/v2rayA/v2rayA/wiki/Usage"
     }
   },
   routingA: {

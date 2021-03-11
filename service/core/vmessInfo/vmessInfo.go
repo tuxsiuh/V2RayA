@@ -4,9 +4,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"github.com/json-iterator/go"
-	"github.com/mzz2017/v2rayA/common"
+	"github.com/v2rayA/v2rayA/common"
+	"net"
 	"net/url"
-	"reflect"
+	"strings"
 )
 
 type VmessInfo struct {
@@ -20,6 +21,7 @@ type VmessInfo struct {
 	Host          string `json:"host"`
 	Path          string `json:"path"`
 	TLS           string `json:"tls"`
+	Flow          string `json:"flow,omitempty"`
 	V             string `json:"v"`
 	AllowInsecure bool   `json:"allowInsecure"`
 	Protocol      string `json:"protocol"`
@@ -27,44 +29,46 @@ type VmessInfo struct {
 
 func (v *VmessInfo) ExportToURL() string {
 	switch v.Protocol {
+	case "vless":
+		//FIXME: 临时方案
+		fallthrough
 	case "", "vmess":
 		if v.V == "" {
 			v.V = "2"
 		}
-		//去除info中的protocol，减少URL体积
-		it := reflect.TypeOf(*v)
-		iv := reflect.ValueOf(*v)
-		m := make(map[string]interface{})
-		for i := 0; i < it.NumField(); i++ {
-			f := it.Field(i)
-			chKey := f.Tag.Get("json")
-			if chKey == "protocol" { //不转换protocol
-				continue
-			}
-			m[chKey] = iv.FieldByName(f.Name).Interface()
-		}
-		b, _ := jsoniter.Marshal(m)
+		b, _ := jsoniter.Marshal(v)
 		return "vmess://" + base64.StdEncoding.EncodeToString(b)
 	case "ss":
 		/* ss://BASE64(method:password)@server:port#name */
-		nameField := ""
-		if v.Ps != "" {
-			nameField = "#" + v.Ps
+		u := &url.URL{
+			Scheme:   "ss",
+			User:     url.User(base64.URLEncoding.EncodeToString([]byte(v.Net + ":" + v.ID))),
+			Host:     net.JoinHostPort(v.Add, v.Port),
+			Path:     "/",
+			RawQuery: "",
+			Fragment: v.Ps,
 		}
-		return fmt.Sprintf(
-			"ss://%v@%v:%v%v",
-			base64.URLEncoding.EncodeToString([]byte(v.Net+":"+v.ID)),
-			v.Add,
-			v.Port,
-			nameField,
-		)
+		if v.Type != "" {
+			a := []string{
+				`obfs-local`,
+				`obfs=` + v.Type,
+				`obfs-host=` + v.Host,
+			}
+			if v.Type == "http" {
+				a = append(a, `obfs-path=`+v.Path)
+			}
+			plugin := strings.Join(a, ";")
+			q := u.Query()
+			q.Set("plugin", plugin)
+			u.RawQuery = q.Encode()
+		}
+		return u.String()
 	case "ssr":
 		/* ssr://server:port:proto:method:obfs:URLBASE64(password)/?remarks=URLBASE64(remarks)&protoparam=URLBASE64(protoparam)&obfsparam=URLBASE64(obfsparam)) */
 		return fmt.Sprintf("ssr://%v", base64.URLEncoding.EncodeToString([]byte(
 			fmt.Sprintf(
-				"%v:%v:%v:%v:%v:%v/?remarks=%v&protoparam=%v&obfsparam=%v",
-				v.Add,
-				v.Port,
+				"%v:%v:%v:%v:%v/?remarks=%v&protoparam=%v&obfsparam=%v",
+				net.JoinHostPort(v.Add, v.Port),
 				v.Type,
 				v.Net,
 				v.TLS,
@@ -85,16 +89,17 @@ func (v *VmessInfo) ExportToURL() string {
 		)))
 	case "trojan":
 		// trojan://passwd@server:port#URLESCAPE(remarks)
-		u, _ := url.Parse(fmt.Sprintf(
-			"trojan://%v@%v:%v",
-			v.ID,
-			v.Add,
-			v.Port,
-		))
-		u.Fragment = v.Ps
+		u := &url.URL{
+			Scheme:   "trojan",
+			User:     url.User(v.ID),
+			Host:     net.JoinHostPort(v.Add, v.Port),
+			Path:     "/",
+			RawQuery: "",
+			Fragment: v.Ps,
+		}
 		q := u.Query()
 		if v.Host != "" {
-			q.Set("peer", v.Host)
+			q.Set("sni", v.Host)
 		}
 		if v.AllowInsecure {
 			q.Set("allowInsecure", "1")

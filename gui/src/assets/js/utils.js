@@ -168,7 +168,11 @@ function generateURL({
 
 /*判断一个IPv4的地址是否是内网地址*/
 function isIntranet(url) {
-  let host = parseURL(url).host;
+  let u = parseURL(url);
+  if (u.host === "") {
+    u = parseURL(location.protocol + "//" + location.host + url);
+  }
+  let host = u.host;
   let arr = host.split(".");
   if (arr.length !== 4) {
     return host === "localhost" || host === "local";
@@ -215,8 +219,11 @@ function isIntranet(url) {
 }
 
 function isVersionGreaterEqual(va, vb) {
-  if (va.toLowerCase() === "debug") {
+  if (va === "debug" || va === "unstable") {
     return true;
+  }
+  if (vb === "debug" || vb === "unstable") {
+    return false;
   }
   va = va.trim();
   vb = vb.trim();

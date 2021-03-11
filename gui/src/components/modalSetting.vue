@@ -1,5 +1,5 @@
 <template>
-  <div class="modal-card modal-setting" style="max-width: 600px;margin:auto">
+  <div class="modal-card modal-setting" style="max-width: 800px;margin:auto">
     <header class="modal-card-head">
       <p class="modal-card-title">{{ $t("common.setting") }}</p>
     </header>
@@ -11,7 +11,7 @@
         style="position: relative"
         ><span>{{ $t("common.latest") }}:</span>
         <a
-          href="https://github.com/Loyalsoldier/v2ray-rules-dat/releases"
+          href="https://github.com/v2rayA/dist-v2ray-rules-dat/releases"
           target="_blank"
           class="is-link"
           >{{ remoteGFWListVersion }}</a
@@ -66,20 +66,20 @@
             $t("setting.options.sameAsPacMode")
           }}</option>
         </b-select>
-        <template v-if="transparent !== 'close'">
-          <b-button
-            style="border-radius: 0;z-index: 2;"
-            @click="handleClickPortWhiteList"
-          >
-            {{ $t("egressPortWhitelist.title") }}
-          </b-button>
-          <b-checkbox-button
-            v-model="ipforward"
-            :native-value="true"
-            style="position:relative;left:-1px;"
-            >{{ $t("setting.ipForwardOn") }}
-          </b-checkbox-button>
-        </template>
+        <b-button
+          v-show="transparent !== 'close'"
+          style="border-radius: 0;z-index: 2;"
+          @click="handleClickPortWhiteList"
+        >
+          {{ $t("egressPortWhitelist.title") }}
+        </b-button>
+        <b-checkbox-button
+          v-show="transparent !== 'close'"
+          v-model="ipforward"
+          :native-value="true"
+          style="position:relative;left:-1px;"
+          >{{ $t("setting.ipForwardOn") }}
+        </b-checkbox-button>
       </b-field>
       <b-field label-position="on-border">
         <template slot="label">
@@ -102,9 +102,9 @@
             $t("setting.options.whitelistCn")
           }}</option>
           <option value="gfwlist">{{ $t("setting.options.gfwlist") }}</option>
-          <option v-show="showTransparentModeRoutingPac" value="custom">{{
-            $t("setting.options.customRouting")
-          }}</option>
+          <!--          <option v-show="showTransparentModeRoutingPac" value="custom">{{-->
+          <!--            $t("setting.options.customRouting")-->
+          <!--          }}</option>-->
           <option v-show="showRoutingA" value="routingA">RoutingA</option>
         </b-select>
         <template v-if="pacMode === 'custom'">
@@ -118,13 +118,13 @@
         </template>
         <template v-if="pacMode === 'routingA'">
           <b-button
-            type="is-primary"
             style="margin-left:0;border-bottom-left-radius: 0;border-top-left-radius: 0;color:rgba(0,0,0,0.75)"
             outlined
             @click="handleClickConfigureRoutingA"
             >{{ $t("operations.configure") }}
           </b-button>
         </template>
+        <p></p>
       </b-field>
       <b-field v-show="showAntipollution" label-position="on-border">
         <template slot="label">
@@ -156,38 +156,42 @@
             $t("setting.options.doh")
           }}</option>
         </b-select>
-        <template v-if="antipollution === 'doh'">
-          <b-button
-            :class="{
-              'right-extra-button': antipollution === 'closed',
-              'no-border-radius': antipollution !== 'closed'
-            }"
-            @click="handleClickDohSetting"
-          >
-            {{ $t("operations.configure") }}
-          </b-button>
-        </template>
-        <template v-if="antipollution === 'none' && showDns">
-          <b-button
-            :class="{
-              'right-extra-button': antipollution === 'closed',
-              'no-border-radius': antipollution !== 'closed'
-            }"
-            @click="handleClickDnsSetting"
-          >
-            {{ $t("operations.configure") }}
-          </b-button>
-        </template>
-        <template
-          v-if="antipollution !== 'closed' && iptablesMode === 'tproxy'"
+        <b-button
+          v-if="antipollution === 'doh'"
+          :class="{
+            'right-extra-button': antipollution === 'closed',
+            'no-border-radius': antipollution !== 'closed'
+          }"
+          @click="handleClickDohSetting"
         >
-          <b-checkbox-button
-            v-model="enhancedMode"
-            :native-value="true"
-            style="position:relative;left:-1px;"
-            >{{ $t("setting.enhancedModeOn") }}
-          </b-checkbox-button>
-        </template>
+          {{ $t("operations.configure") }}
+        </b-button>
+        <b-button
+          v-if="antipollution === 'none' && showDns"
+          :class="{
+            'right-extra-button': antipollution === 'closed',
+            'no-border-radius': antipollution !== 'closed'
+          }"
+          @click="handleClickDnsSetting"
+        >
+          {{ $t("operations.configure") }}
+        </b-button>
+        <b-checkbox-button
+          v-if="showDnsForceMode"
+          v-model="dnsForceMode"
+          :native-value="true"
+          style="position:relative;left:-1px;"
+          >{{ $t("setting.dnsForceModeOn") }}
+        </b-checkbox-button>
+
+        <b-checkbox-button
+          v-if="antipollution !== 'closed' && iptablesMode === 'tproxy'"
+          v-model="enhancedMode"
+          :native-value="true"
+          style="position:relative;left:-1px;"
+          >{{ $t("setting.enhancedModeOn") }}
+        </b-checkbox-button>
+        <p></p>
       </b-field>
       <b-field label-position="on-border">
         <template slot="label">
@@ -324,6 +328,7 @@ export default {
     transparent: "close",
     ipforward: false,
     enhancedMode: false,
+    dnsForceMode: false,
     dnsforward: "no",
     antipollution: "none",
     pacAutoUpdateMode: "none",
@@ -339,7 +344,8 @@ export default {
     showDns: false,
     showTransparentModeRoutingPac: false,
     showRoutingA: false,
-    showAntipollutionClosed: false
+    showAntipollutionClosed: false,
+    showDnsForceMode: false
   }),
   computed: {
     dockerMode() {
@@ -384,6 +390,10 @@ export default {
         this.showDoh =
           isVersionGreaterEqual(localStorage["version"], "0.6.2") &&
           localStorage["dohValid"] === "yes";
+        this.showDnsForceMode = isVersionGreaterEqual(
+          localStorage["version"],
+          "1.1.3"
+        );
         this.showDns = isVersionGreaterEqual(
           localStorage["version"],
           "0.7.0.6"
@@ -464,6 +474,7 @@ export default {
             transparent: this.transparent,
             ipforward: this.ipforward,
             enhancedMode: this.enhancedMode,
+            dnsForceMode: this.dnsForceMode,
             dnsforward: this.antipollution === "dnsforward" ? "yes" : "no", //版本兼容
             antipollution: this.antipollution
           },
@@ -489,6 +500,7 @@ export default {
       if (this.muxOn === "yes" && !this.$refs.muxinput.checkHtml5Validity()) {
         return;
       }
+      console.log(apiRoot);
       if (this.transparent !== "close" && !isIntranet(apiRoot)) {
         let U = parseURL(apiRoot);
         let port = U.port;

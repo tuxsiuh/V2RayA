@@ -4,11 +4,6 @@
   -moz-osx-font-smoothing: grayscale;
   font-style: normal;
 }
-
-.mdi-chevron-left::before {
-  content: "\ea06";
-}
-
-.mdi-chevron-right::before {
-  content: "\ea07";
+.mdi.mdi-:before{
+  font: unset !important;
 }

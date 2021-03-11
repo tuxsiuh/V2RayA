@@ -1,9 +1,11 @@
 package touch
 
 import (
-	"github.com/mzz2017/v2rayA/db/configure"
 	"fmt"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"net"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -31,6 +33,7 @@ type Subscription struct {
 	TYPE    configure.TouchType `json:"_type"`
 	Host    string              `json:"host"`
 	Status  SubscriptionStatus  `json:"status"`
+	Info    string              `json:"info"`
 	Servers []TouchServer       `json:"servers"`
 }
 
@@ -54,20 +57,31 @@ func serverRawsToServers(rss []configure.ServerRaw) (ts []TouchServer) {
 		if v.VmessInfo.Protocol == "" {
 			v.VmessInfo.Protocol = "vmess"
 		}
+		protocol := strings.ToUpper(v.VmessInfo.Protocol)
 		var protoToShow string
 		switch v.VmessInfo.Protocol {
-		case "", "vmess", "ss", "shadowsocks":
-			protoToShow = fmt.Sprintf("%v(%v)", v.VmessInfo.Protocol, v.VmessInfo.Net)
+		case "", "vmess", "vless":
+			if v.VmessInfo.TLS != "" && v.VmessInfo.TLS != "none" {
+				protoToShow = fmt.Sprintf("%v(%v+%v)", protocol, v.VmessInfo.Net, v.VmessInfo.TLS)
+			} else {
+				protoToShow = fmt.Sprintf("%v(%v)", protocol, v.VmessInfo.Net)
+			}
+		case "ss", "shadowsocks":
+			if v.VmessInfo.Type != "" {
+				protoToShow = fmt.Sprintf("%v(%v+%v)", protocol, v.VmessInfo.Net, v.VmessInfo.Type)
+			} else {
+				protoToShow = fmt.Sprintf("%v(%v)", protocol, v.VmessInfo.Net)
+			}
 		case "ssr", "shadowsocksr":
-			protoToShow = fmt.Sprintf("%v(%v)", v.VmessInfo.Protocol, v.VmessInfo.Type)
+			protoToShow = fmt.Sprintf("%v(%v)", protocol, v.VmessInfo.Type)
 		default:
-			protoToShow = v.VmessInfo.Protocol
+			protoToShow = protocol
 		}
 		var address string
 		if v.VmessInfo.Port == "" {
 			address = v.VmessInfo.Add
 		} else {
-			address = v.VmessInfo.Add + ":" + v.VmessInfo.Port
+			address = net.JoinHostPort(v.VmessInfo.Add, v.VmessInfo.Port)
 		}
 		ts[i] = TouchServer{
 			ID:        i + 1,
@@ -96,6 +110,7 @@ func GenerateTouch() (t Touch) {
 			Host:    u.Host,
 			Status:  SubscriptionStatus(v.Status),
 			Servers: serverRawsToServers(v.Servers),
+			Info:    v.Info,
 		}
 	}
 	t.ConnectedServer = configure.GetConnectedServer()

@@ -1,11 +1,11 @@
 package controller
 
 import (
-	"github.com/mzz2017/v2rayA/common"
-	"github.com/mzz2017/v2rayA/core/v2ray"
-	"github.com/mzz2017/v2rayA/global"
-	"github.com/mzz2017/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/gin-gonic/gin"
+	"github.com/v2rayA/v2rayA/plugin"
 )
 
 func PostV2ray(ctx *gin.Context) {
@@ -27,11 +27,11 @@ func PostV2ray(ctx *gin.Context) {
 }
 
 func DeleteV2ray(ctx *gin.Context) {
-	err := v2ray.StopAndDisableV2rayService()
+	err := v2ray.StopV2rayService()
 	if err != nil {
 		common.ResponseError(ctx, logError(err))
 		return
 	}
-	global.Plugins.CloseAll()
+	plugin.GlobalPlugins.CloseAll()
 	common.ResponseSuccess(ctx, gin.H{"lastConnectedServer": configure.GetConnectedServer()})
 }

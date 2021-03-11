@@ -1,19 +1,76 @@
 package v2ray
 
 import (
+	"fmt"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/common/netTools/netstat"
+	"github.com/v2rayA/v2rayA/common/netTools/ports"
+	"github.com/v2rayA/v2rayA/core/dnsPoison/entity"
+	"github.com/v2rayA/v2rayA/core/iptables"
+	"github.com/v2rayA/v2rayA/core/v2ray/where"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/global"
+	"io/ioutil"
 	"log"
+	"os"
+	"path"
 	"strings"
 	"time"
-	"github.com/mzz2017/v2rayA/common"
-	"github.com/mzz2017/v2rayA/common/netTools/netstat"
-	"github.com/mzz2017/v2rayA/common/netTools/ports"
-	"github.com/mzz2017/v2rayA/core/dnsPoison/entity"
-	"github.com/mzz2017/v2rayA/core/iptables"
-	"github.com/mzz2017/v2rayA/global"
-	"github.com/mzz2017/v2rayA/db/configure"
 )
 
+const (
+	resolverFile  = "/etc/resolv.conf"
+	checkInterval = 3 * time.Second
+)
+
+type DnsHijacker struct {
+	ticker *time.Ticker
+}
+
+func NewDnsHijacker() *DnsHijacker {
+	hij := DnsHijacker{
+		ticker: time.NewTicker(checkInterval),
+	}
+	hij.HijackDNS()
+	go func() {
+		for range hij.ticker.C {
+			hij.HijackDNS()
+		}
+	}()
+	return &hij
+}
+func (h *DnsHijacker) Close() error {
+	h.ticker.Stop()
+	return nil
+}
+
+var hijacker *DnsHijacker
+
+func (h *DnsHijacker) HijackDNS() error {
+	err := ioutil.WriteFile(resolverFile, []byte("# v2rayA DNS hijack\nnameserver 223.5.5.5\nnameserver 114.114.114.114\n"), os.FileMode(0644))
+	if err != nil {
+		err = fmt.Errorf("failed to hijackDNS: [write] %v", err)
+	}
+	return err
+}
+
+func resetDnsHijacker() {
+	if hijacker != nil {
+		hijacker.Close()
+	}
+	hijacker = NewDnsHijacker()
+}
+
+func removeDnsHijacker() {
+	if hijacker != nil {
+		hijacker.Close()
+		hijacker = nil
+	}
+}
+
 func DeleteTransparentProxyRules() {
+	removeDnsHijacker()
+	iptables.CloseWatcher()
 	iptables.Tproxy.GetCleanCommands().Clean()
 	iptables.Redirect.GetCleanCommands().Clean()
 	iptables.DropSpoofing.GetCleanCommands().Clean()
@@ -28,8 +85,13 @@ func WriteTransparentProxyRules(preprocess *func(c *iptables.SetupCommands)) err
 		}
 	}
 	setting := configure.GetSettingNotNil()
-	if !(!global.SupportTproxy || setting.EnhancedMode) {
-		if err := iptables.Tproxy.GetSetupCommands().Setup(preprocess); err != nil {
+	if global.SupportTproxy && !setting.EnhancedMode {
+		if err := iptables.Tproxy.GetSetupCommands().Setup(preprocess); err == nil {
+			if setting.AntiPollution != configure.AntipollutionClosed {
+				resetDnsHijacker()
+			}
+			iptables.SetWatcher(&iptables.Tproxy)
+		} else {
 			if strings.Contains(err.Error(), "TPROXY") && strings.Contains(err.Error(), "No chain") {
 				err = newError("not compile xt_TPROXY in kernel")
 			}
@@ -37,9 +99,10 @@ func WriteTransparentProxyRules(preprocess *func(c *iptables.SetupCommands)) err
 			log.Println(err)
 			global.SupportTproxy = false
 		}
-	}
-	if !global.SupportTproxy || setting.EnhancedMode {
-		if err := iptables.Redirect.GetSetupCommands().Setup(preprocess); err != nil {
+	} else {
+		if err := iptables.Redirect.GetSetupCommands().Setup(preprocess); err == nil {
+			iptables.SetWatcher(&iptables.Redirect)
+		} else {
 			log.Println(err)
 			DeleteTransparentProxyRules()
 			return newError("not support transparent proxy: ").Base(err)
@@ -69,6 +132,10 @@ func nextPortsGroup(ports []string, groupSize int) (group []string, remain []str
 }
 
 func CheckAndSetupTransparentProxy(checkRunning bool) (err error) {
+	v2rayPath, err := where.GetV2rayBinPath()
+	if err != nil {
+		return
+	}
 	setting := configure.GetSettingNotNil()
 	preprocess := func(c *iptables.SetupCommands) {
 		commands := string(*c)
@@ -126,7 +193,7 @@ func CheckAndSetupTransparentProxy(checkRunning bool) (err error) {
 		}
 		if o {
 			p, e := s.Process()
-			if e == nil && p.Name != "v2ray" {
+			if e == nil && p.Name != path.Base(v2rayPath) {
 				err = newError("transparent proxy cannot be set up, port 32345 is occupied by ", p.Name)
 				return
 			}

@@ -3,14 +3,15 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/mzz2017/v2rayA/common"
-	"github.com/mzz2017/v2rayA/core/touch"
-	"github.com/mzz2017/v2rayA/db/configure"
-	"github.com/mzz2017/v2rayA/global"
-	_ "github.com/mzz2017/v2rayA/plugin/pingtunnel"
-	_ "github.com/mzz2017/v2rayA/plugin/shadowsocksr"
-	_ "github.com/mzz2017/v2rayA/plugin/trojan"
-	"github.com/mzz2017/v2rayA/service"
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/touch"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/global"
+	_ "github.com/v2rayA/v2rayA/plugin/pingtunnel"
+	_ "github.com/v2rayA/v2rayA/plugin/shadowsocksr"
+	_ "github.com/v2rayA/v2rayA/plugin/simpleobfs"
+	_ "github.com/v2rayA/v2rayA/plugin/ssrpluginSimpleobfs"
+	"github.com/v2rayA/v2rayA/service"
 	"io/ioutil"
 	"moona/config"
 	"os"
@@ -96,7 +97,7 @@ func GenerateTestList() configure.Whiches {
 
 func main() {
 	if !common.IsInDocker() {
-		fmt.Printf("moona must run with docker")
+		fmt.Println("moona must run with docker")
 		os.Exit(1)
 	}
 	c := config.GetConfig()

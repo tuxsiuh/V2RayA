@@ -10,10 +10,10 @@
 package socks5
 
 import (
-	"github.com/mzz2017/shadowsocksR/tools/leakybuf"
-	"github.com/mzz2017/v2rayA/extra/proxy"
-	"github.com/mzz2017/v2rayA/global"
-	"github.com/nadoo/glider/common/socks"
+	"github.com/v2rayA/shadowsocksR/tools/leakybuf"
+	"github.com/v2rayA/v2rayA/extra/proxy"
+	"github.com/v2rayA/v2rayA/global"
+	"github.com/nadoo/glider/proxy/socks"
 	"io"
 	"log"
 	"net"
@@ -105,6 +105,10 @@ func (s *Socks5) ListenAndServeTCP() error {
 
 		go s.Serve(c)
 	}
+}
+
+func (s *Socks5) Close() error {
+	return s.TcpListener.Close()
 }
 
 // Serve serves a connection.

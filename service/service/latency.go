@@ -2,6 +2,13 @@ package service
 
 import (
 	"fmt"
+	"github.com/v2rayA/v2rayA/common/httpClient"
+	"github.com/v2rayA/v2rayA/common/netTools/netstat"
+	"github.com/v2rayA/v2rayA/core/dnsPoison/entity"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/core/vmessInfo"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/plugin"
 	"log"
 	"net"
 	"net/http"
@@ -9,14 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"github.com/mzz2017/v2rayA/common/httpClient"
-	"github.com/mzz2017/v2rayA/common/netTools/netstat"
-	"github.com/mzz2017/v2rayA/core/dnsPoison/entity"
-	"github.com/mzz2017/v2rayA/core/v2ray"
-	"github.com/mzz2017/v2rayA/core/vmessInfo"
-	"github.com/mzz2017/v2rayA/db/configure"
-	"github.com/mzz2017/v2rayA/global"
-	"github.com/mzz2017/v2rayA/plugin"
 )
 
 func Ping(which []*configure.Which, timeout time.Duration) (_ []*configure.Which, err error) {
@@ -138,8 +137,23 @@ func TestHttpLatency(which []*configure.Which, timeout time.Duration, maxParalle
 		v2rayInboundPort := strconv.Itoa(port)
 		ssrLocalPortIfNeed := 0
 		switch strings.ToLower(v.Protocol) {
-		case "vmess", "":
+		case "vmess", "vless", "trojan", "":
 			//pass
+		case "shadowsocks", "ss":
+			var donotneedport bool
+			if v.Type == "" {
+				switch v.Net {
+				case "aes-128-cfb", "aes-192-cfb", "aes-256-cfb", "aes-128-ctr", "aes-192-ctr", "aes-256-ctr", "aes-128-ofb", "aes-192-ofb", "aes-256-ofb", "des-cfb", "bf-cfb", "cast5-cfb", "rc4-md5", "chacha20", "chacha20-ietf", "salsa20", "camellia-128-cfb", "camellia-192-cfb", "camellia-256-cfb", "idea-cfb", "rc2-cfb", "seed-cfb":
+					//ssr插件接simpleobfs插件
+				default:
+					donotneedport = true
+				}
+			}
+			if donotneedport {
+				break
+			}
+			//有可能是simpleobfs
+			fallthrough
 		default:
 			if !plugin.IsProtocolValid(v) {
 				which[i].Latency = "UNSUPPORTED PROTOCOL"
@@ -176,7 +190,7 @@ func TestHttpLatency(which []*configure.Which, timeout time.Duration, maxParalle
 			if err != nil {
 				return nil, err
 			}
-			global.Plugins.Append(plu)
+			plugin.GlobalPlugins.Append(plu)
 		}
 	}
 	err = v2ray.WriteV2rayConfig(tmpl.ToConfigBytes())
@@ -191,8 +205,8 @@ func TestHttpLatency(which []*configure.Which, timeout time.Duration, maxParalle
 	if err != nil {
 		return nil, err
 	}
-	//线程并发限制
 	//time.Sleep(200 * time.Millisecond)
+	//线程并发限制
 	wg = new(sync.WaitGroup)
 	cc := make(chan interface{}, maxParallel)
 	for i := range which {
@@ -236,11 +250,13 @@ func httpLatency(which *configure.Which, port string, timeout time.Duration) {
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	req, _ := http.NewRequest("HEAD", "http://www.alibaba.com", nil)
+	req, _ := http.NewRequest("GET", "http://www.msftconnecttest.com/connecttest.txt", nil)
+	//req, _ := http.NewRequest("GET", "http://www.gstatic.com/generate_204", nil)
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Connection", "close")
+	req.Header.Set("User-Agent", "curl/7.70.0")
 	resp, err := c.Do(req)
 	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		s, _ := which.LocateServer()

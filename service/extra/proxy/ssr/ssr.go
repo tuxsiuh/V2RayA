@@ -1,19 +1,17 @@
 package ssr
 
 import (
-	shadowsocksr "github.com/mzz2017/shadowsocksR"
-	"github.com/mzz2017/shadowsocksR/ssr"
-	"github.com/mzz2017/shadowsocksR/streamCipher"
+	shadowsocksr "github.com/v2rayA/shadowsocksR"
+	"github.com/v2rayA/shadowsocksR/obfs"
+	"github.com/v2rayA/shadowsocksR/protocol"
+	"github.com/v2rayA/shadowsocksR/ssr"
+	"github.com/v2rayA/shadowsocksR/streamCipher"
+	"github.com/v2rayA/shadowsocksR/tools/socks"
+	"github.com/v2rayA/v2rayA/extra/proxy"
+	"log"
 	"net"
 	"net/url"
 	"strconv"
-	"strings"
-
-	"github.com/mzz2017/shadowsocksR/obfs"
-	"github.com/mzz2017/shadowsocksR/protocol"
-	"github.com/mzz2017/v2rayA/extra/proxy"
-	"github.com/nadoo/glider/common/socks"
-	"log"
 )
 
 // SSR struct.
@@ -102,16 +100,16 @@ func (s *SSR) Dial(network, addr string) (net.Conn, error) {
 	}
 
 	// should initialize obfs/protocol now
-	rs := strings.Split(ssrconn.RemoteAddr().String(), ":")
-	port, _ := strconv.Atoi(rs[1])
+	h, p, _ := net.SplitHostPort(ssrconn.RemoteAddr().String())
+	port, _ := strconv.Atoi(p)
 
 	ssrconn.IObfs = obfs.NewObfs(s.Obfs)
 	if ssrconn.IObfs == nil {
 		return nil, newError("[ssr] unsupported obfs type: " + s.Obfs)
 	}
 
-	obfsServerInfo := &ssr.ServerInfoForObfs{
-		Host:   rs[0],
+	obfsServerInfo := &ssr.ServerInfo{
+		Host:   h,
 		Port:   uint16(port),
 		TcpMss: 1460,
 		Param:  s.ObfsParam,
@@ -123,8 +121,8 @@ func (s *SSR) Dial(network, addr string) (net.Conn, error) {
 		return nil, newError("[ssr] unsupported protocol type: " + s.Protocol)
 	}
 
-	protocolServerInfo := &ssr.ServerInfoForObfs{
-		Host:   rs[0],
+	protocolServerInfo := &ssr.ServerInfo{
+		Host:   h,
 		Port:   uint16(port),
 		TcpMss: 1460,
 		Param:  s.ProtocolParam,

@@ -1,16 +1,19 @@
 package service
 
 import (
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/common/httpClient"
+	"github.com/v2rayA/v2rayA/core/nodeData"
+	"github.com/v2rayA/v2rayA/core/touch"
+	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/db/configure"
 	"strings"
 	"time"
-	"github.com/mzz2017/v2rayA/common/httpClient"
-	"github.com/mzz2017/v2rayA/core/nodeData"
-	"github.com/mzz2017/v2rayA/core/touch"
-	"github.com/mzz2017/v2rayA/core/v2ray"
-	"github.com/mzz2017/v2rayA/db/configure"
 )
 
 func Import(url string, which *configure.Which) (err error) {
+	//log.Println(url)
+	checkResolvConf()
 	url = strings.TrimSpace(url)
 	if strings.HasPrefix(url, "vmess://") ||
 		strings.HasPrefix(url, "ss://") ||
@@ -46,6 +49,13 @@ func Import(url string, which *configure.Which) (err error) {
 		}
 	} else {
 		//不是ss://也不是vmess://，有可能是订阅地址
+		if strings.HasPrefix(url, "sub://") {
+			var e error
+			url, e = common.Base64StdDecode(url[6:])
+			if e != nil {
+				url, _ = common.Base64URLDecode(url[6:])
+			}
+		}
 		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 			url = "http://" + url
 		}
@@ -54,7 +64,7 @@ func Import(url string, which *configure.Which) (err error) {
 			return err
 		}
 		c.Timeout = 90 * time.Second
-		infos, err := ResolveSubscriptionWithClient(url, c)
+		infos, status, err := ResolveSubscriptionWithClient(url, c)
 		if err != nil {
 			return newError("failed to resolve subscription address").Base(err)
 		}
@@ -79,6 +89,7 @@ func Import(url string, which *configure.Which) (err error) {
 			Address: url,
 			Status:  string(touch.NewUpdateStatus()),
 			Servers: uniqueServers,
+			Info:    status,
 		}})
 	}
 	return

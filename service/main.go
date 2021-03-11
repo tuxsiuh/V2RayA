@@ -2,10 +2,11 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
+	_ "github.com/v2rayA/v2rayA/plugin/pingtunnel"
+	_ "github.com/v2rayA/v2rayA/plugin/shadowsocksr"
+	_ "github.com/v2rayA/v2rayA/plugin/simpleobfs"
+	_ "github.com/v2rayA/v2rayA/plugin/ssrpluginSimpleobfs"
 	"log"
-	_ "github.com/mzz2017/v2rayA/plugin/pingtunnel"
-	_ "github.com/mzz2017/v2rayA/plugin/shadowsocksr"
-	_ "github.com/mzz2017/v2rayA/plugin/trojan"
 )
 
 func main() {
@@ -13,7 +14,6 @@ func main() {
 	checkEnvironment()
 	checkTProxySupportability()
 	initConfigure()
-	checkConnection()
 	go checkUpdate()
 	hello()
 	if err := run(); err != nil {

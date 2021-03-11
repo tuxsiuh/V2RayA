@@ -1,4 +1,4 @@
-package trojan
+package ssrpluginSimpleobfs
 
 import "v2ray.com/core/common/errors"
 
