@@ -1,16 +1,21 @@
 package entity
 
 import (
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/common/netTools"
+	"github.com/v2rayA/v2rayA/common/netTools/ports"
+	"github.com/v2rayA/v2rayA/core/dnsPoison"
+	"github.com/v2rayA/v2rayA/core/v2ray/asset"
+	"github.com/v2rayA/v2rayA/core/v2ray/where"
+	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/global"
 	"log"
+	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 	"v2ray.com/core/app/router"
-	"github.com/v2rayA/v2rayA/common/netTools"
-	"github.com/v2rayA/v2rayA/core/dnsPoison"
-	"github.com/v2rayA/v2rayA/core/v2ray/asset"
-	"github.com/v2rayA/v2rayA/global"
-	"github.com/v2rayA/v2rayA/db/configure"
 )
 
 var (
@@ -30,19 +35,60 @@ type ExtraInfo struct {
 	ServerDomain string
 }
 
-func ShouldDnsPoisonOpen() bool {
-	if setting := configure.GetSettingNotNil();
-		!(setting.Transparent != configure.TransparentClose &&
-			setting.AntiPollution != configure.AntipollutionClosed &&
-			(!global.SupportTproxy || setting.EnhancedMode)) {
-		//redirect+poison增强方案
+func dnsPortValid() bool {
+	occupied, socket, err := ports.IsPortOccupied([]string{"53:udp"})
+	if err != nil {
+		return false
+	}
+
+	if occupied {
+		p, err := socket.Process()
+		if err != nil {
+			return false
+		}
+		if p.PPID == strconv.Itoa(os.Getpid()) {
+			return true
+		}
+		log.Printf("[info] port 53 is occupied by %v(%v)\n", p.Name, p.PID)
 		return false
 	}
 	return true
 }
 
+/*
+0: neither
+
+1: redirect + poison
+
+2: redirect + fakedns
+*/
+func ShouldDnsPoisonOpen() int {
+	setting := configure.GetSettingNotNil()
+	if setting.Transparent == configure.TransparentClose ||
+		setting.AntiPollution == configure.AntipollutionClosed ||
+		(global.SupportTproxy && !setting.EnhancedMode) {
+		return 0
+	}
+	ver, err := where.GetV2rayServiceVersion()
+	if err != nil {
+		ver = "0.0.0"
+	}
+	fakednsValid, _ := common.VersionGreaterEqual(ver, "4.35.0")
+	if fakednsValid && configure.GetSettingNotNil().Transparent == configure.TransparentClose {
+		fakednsValid = false
+	}
+	if fakednsValid && !dnsPortValid() {
+		log.Println("[fakedns] unable to use fakedns: port 53 is occupied")
+		fakednsValid = false
+	}
+	if !fakednsValid {
+		return 1
+	}
+	return 2
+}
+
 func CheckAndSetupDnsPoisonWithExtraInfo(info *ExtraInfo) {
-	if !ShouldDnsPoisonOpen() {
+	if ShouldDnsPoisonOpen() != 1 {
 		return
 	}
 	whitedms := make([]*router.Domain, 0, len(info.DohDomains))
@@ -137,7 +183,7 @@ func StartDNSPoison(externWhiteDnsServers []*router.CIDR, externWhiteDomains []*
 					return
 				}
 				//准备白名单
-				log.Println("DnsPoison: preparing whitelist")
+				log.Println("[DnsPoison] preparing whitelist")
 				wlDms, err := asset.GetWhitelistCn(nil, whiteDomains)
 				//var wlDms = new(strmatcher.MatcherGroup)
 				if err != nil {

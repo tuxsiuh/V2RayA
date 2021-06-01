@@ -107,7 +107,9 @@ export default {
       on: "On",
       off: "Off",
       updateSubWhenStart: "Update Subscriptions When Service Starts",
+      updateSubAtIntervals: "Update Subscriptions Regularly (Unit: hour)",
       updateGfwlistWhenStart: "Update GFWList When Service Starts",
+      updateGfwlistAtIntervals: "Update GFWList Regularly (Unit: hour)",
       dependTransparentMode: "Depend on Transparent Proxy",
       closed: "Off"
     },
@@ -216,7 +218,8 @@ export default {
     hostObfuscation: "Host",
     pathObfuscation: "Path",
     seedObfuscation: "Seed",
-    password: "Password"
+    password: "Password",
+    origin: "origin"
   },
   configureSubscription: {
     title: "Configure Subscription"

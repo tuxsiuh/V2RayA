@@ -8,63 +8,41 @@ import (
 	"github.com/v2rayA/v2rayA/core/dnsPoison"
 	"github.com/v2rayA/v2rayA/core/v2ray/where"
 	"github.com/v2rayA/v2rayA/global"
-	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 	v2router "v2ray.com/core/app/router"
 	"v2ray.com/core/common/strmatcher"
 )
 
-var v2rayLocationAsset *string
-
 func GetV2rayLocationAsset() (s string) {
-	if v2rayLocationAsset != nil {
-		return *v2rayLocationAsset
-	}
-	switch global.ServiceControlMode {
-	case global.SystemctlMode, global.ServiceMode:
-		p, _ := where.GetV2rayServiceFilePath()
-		out, err := exec.Command("sh", "-c", "cat "+p+"|grep Environment=V2RAY_LOCATION_ASSET").CombinedOutput()
-		if err != nil {
-			break
-		}
-		s = strings.TrimSpace(string(out))
-		s = s[len("Environment=V2RAY_LOCATION_ASSET="):]
-	}
-	var err error
-	if s == "" {
-		//fine, guess one
-		var candidates = []string{`/usr/local/share/v2ray`, `/usr/share/v2ray`}
-		var ver string
-		var is bool
-		if ver, err = where.GetV2rayServiceVersion(); err == nil {
-			if is, err = common.VersionGreaterEqual(ver, "4.27.1"); is {
-				for _, c := range candidates {
-					if _, err := os.Stat(c); os.IsNotExist(err) {
-						continue
-					}
-					s = c
-					break
+	var candidates = []string{`/usr/local/share/v2ray`, `/usr/share/v2ray`, `/usr/local/share/xray`, `/usr/share/xray`}
+	var is bool
+	if ver, err := where.GetV2rayServiceVersion(); err == nil {
+		if is, err = common.VersionGreaterEqual(ver, "4.27.1"); is {
+			for _, c := range candidates {
+				if _, err := os.Stat(c); os.IsNotExist(err) {
+					continue
 				}
+				if _, err := os.Stat(path.Join(c, "geoip.dat")); os.IsNotExist(err) {
+					continue
+				}
+				s = c
+				break
 			}
 		}
-		if s == "" {
-			//maybe v2ray working directory
-			v2rayPath, err := where.GetV2rayBinPath()
-			if err != nil {
-				s = "/etc/v2ray"
-			}
-			s = path.Dir(v2rayPath)
+	}
+	// old version of v2ray
+	if s == "" {
+		//maybe v2ray working directory
+		v2rayPath, err := where.GetV2rayBinPath()
+		if err != nil {
+			s = "/etc/v2ray"
 		}
-	} else {
-		//save the result if not by guess
-		v2rayLocationAsset = &s
+		s = path.Dir(v2rayPath)
 	}
 	return
 }
@@ -102,7 +80,7 @@ func IsCustomExists() bool {
 }
 
 func GetConfigBytes() (b []byte, err error) {
-	b, err = ioutil.ReadFile(GetV2rayConfigPath())
+	b, err = os.ReadFile(GetV2rayConfigPath())
 	if err != nil {
 		log.Println(err)
 		return
@@ -132,7 +110,7 @@ func GetWhitelistCn(externIps []*v2router.CIDR, externDomains []*v2router.Domain
 	}
 	dir := GetV2rayLocationAsset()
 	var siteList v2router.GeoSiteList
-	b, err := ioutil.ReadFile(path.Join(dir, "geosite.dat"))
+	b, err := os.ReadFile(path.Join(dir, "geosite.dat"))
 	if err != nil {
 		return nil, newError("GetWhitelistCn").Base(err)
 	}

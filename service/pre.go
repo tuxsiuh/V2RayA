@@ -8,7 +8,6 @@ import (
 	jsonIteratorExtra "github.com/json-iterator/go/extra"
 	"github.com/tidwall/gjson"
 	"github.com/v2rayA/v2rayA/common/netTools/ports"
-	"github.com/v2rayA/v2rayA/core/ipforward"
 	"github.com/v2rayA/v2rayA/core/iptables"
 	"github.com/v2rayA/v2rayA/core/v2ray"
 	"github.com/v2rayA/v2rayA/core/v2ray/asset"
@@ -18,9 +17,9 @@ import (
 	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/v2rayA/v2rayA/extra/gopeed"
 	"github.com/v2rayA/v2rayA/global"
-	"github.com/v2rayA/v2rayA/router"
-	"github.com/v2rayA/v2rayA/service"
-	"io/ioutil"
+	"github.com/v2rayA/v2rayA/server/router"
+	"github.com/v2rayA/v2rayA/server/service"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -106,7 +105,7 @@ func migrate(jsonConfPath string) (err error) {
 			log.Println("[info] Migrating complete")
 		}
 	}()
-	b, err := ioutil.ReadFile(jsonConfPath)
+	b, err := os.ReadFile(jsonConfPath)
 	if err != nil {
 		return
 	}
@@ -155,13 +154,6 @@ func initConfigure() {
 			initDBValue()
 		}
 	}
-	//配置ip转发
-	setting := configure.GetSettingNotNil()
-	if setting.Transparent != configure.TransparentClose {
-		if setting.IpForward != ipforward.IsIpForwardOn() {
-			_ = ipforward.WriteIpForward(setting.IpForward)
-		}
-	}
 	//检查config.json是否存在
 	if _, err := os.Stat(asset.GetV2rayConfigPath()); err != nil {
 		//不存在就建一个。多数情况发生于docker模式挂载volume时覆盖了/etc/v2ray
@@ -181,7 +173,7 @@ func initConfigure() {
 					return
 				}
 				defer resp.Body.Close()
-				b, err := ioutil.ReadAll(resp.Body)
+				b, err := io.ReadAll(resp.Body)
 				if err != nil {
 					return
 				}
@@ -223,7 +215,48 @@ func hello() {
 	color.Red.Println("Starting...")
 }
 
+func updateSubscriptions() {
+	subs := configure.GetSubscriptions()
+	lenSubs := len(subs)
+	control := make(chan struct{}, 2) //并发限制同时更新2个订阅
+	wg := new(sync.WaitGroup)
+	for i := 0; i < lenSubs; i++ {
+		wg.Add(1)
+		go func(i int) {
+			control <- struct{}{}
+			err := service.UpdateSubscription(i, false)
+			if err != nil {
+				log.Println(fmt.Sprintf("[AutoUpdate] Subscriptions: Failed to update subscription -- ID: %d，err: %v", i, err.Error()))
+			} else {
+				log.Println(fmt.Sprintf("[AutoUpdate] Subscriptions: Complete updating subscription -- ID: %d，Address: %s", i, subs[i].Address))
+			}
+			wg.Done()
+			<-control
+		}(i)
+	}
+	wg.Wait()
+}
+
+func initUpdatingTicker() {
+	global.TickerUpdateGFWList = time.NewTicker(24 * time.Hour * 365 * 100)
+	global.TickerUpdateSubscription = time.NewTicker(24 * time.Hour * 365 * 100)
+	go func() {
+		for range global.TickerUpdateGFWList.C {
+			_, err := gfwlist.CheckAndUpdateGFWList()
+			if err != nil {
+				log.Println("[AutoUpdate] GFWList:", err)
+			}
+		}
+	}()
+	go func() {
+		for range global.TickerUpdateSubscription.C {
+			updateSubscriptions()
+		}
+	}()
+}
+
 func checkUpdate() {
+	setting := service.GetSetting()
 	//等待网络连通
 	for {
 		c := http.DefaultClient
@@ -236,9 +269,16 @@ func checkUpdate() {
 		time.Sleep(c.Timeout)
 	}
 
-	setting := service.GetSetting()
+	//初始化ticker
+	initUpdatingTicker()
+
 	//检查PAC文件更新
-	if setting.PacAutoUpdateMode == configure.AutoUpdate || setting.Transparent == configure.TransparentGfwlist {
+	if setting.GFWListAutoUpdateMode == configure.AutoUpdate ||
+		setting.GFWListAutoUpdateMode == configure.AutoUpdateAtIntervals ||
+		setting.Transparent == configure.TransparentGfwlist {
+		if setting.GFWListAutoUpdateMode == configure.AutoUpdateAtIntervals {
+			global.TickerUpdateGFWList.Reset(time.Duration(setting.GFWListAutoUpdateIntervalHour) * time.Hour)
+		}
 		switch setting.PacMode {
 		case configure.GfwlistMode:
 			go func() {
@@ -256,28 +296,13 @@ func checkUpdate() {
 	}
 
 	//检查订阅更新
-	if setting.SubscriptionAutoUpdateMode == configure.AutoUpdate {
-		go func() {
-			subs := configure.GetSubscriptions()
-			lenSubs := len(subs)
-			control := make(chan struct{}, 2) //并发限制同时更新2个订阅
-			wg := new(sync.WaitGroup)
-			for i := 0; i < lenSubs; i++ {
-				wg.Add(1)
-				go func(i int) {
-					control <- struct{}{}
-					err := service.UpdateSubscription(i, false)
-					if err != nil {
-						log.Println(fmt.Sprintf("Failed to update subscription -- ID: %d，err: %v", i, err.Error()))
-					} else {
-						log.Println(fmt.Sprintf("Complete updating subscription -- ID: %d，地址: %s", i, subs[i].Address))
-					}
-					wg.Done()
-					<-control
-				}(i)
-			}
-			wg.Wait()
-		}()
+	if setting.SubscriptionAutoUpdateMode == configure.AutoUpdate ||
+		setting.SubscriptionAutoUpdateMode == configure.AutoUpdateAtIntervals {
+
+		if setting.SubscriptionAutoUpdateMode == configure.AutoUpdateAtIntervals {
+			global.TickerUpdateSubscription.Reset(time.Duration(setting.SubscriptionAutoUpdateIntervalHour) * time.Hour)
+		}
+		go updateSubscriptions()
 	}
 	// 检查服务端更新
 	go func() {
@@ -300,11 +325,9 @@ func run() (err error) {
 	if w := configure.GetConnectedServer(); w != nil {
 		_ = service.Connect(w)
 	}
-	if err != nil {
-		w := configure.GetConnectedServer()
-		log.Println(err, ", which:", w)
-		_ = configure.ClearConnected()
-	}
+	//w := configure.GetConnectedServer()
+	//log.Println(err, ", which:", w)
+	//_ = configure.ClearConnected()
 	errch := make(chan error)
 	//启动服务端
 	go func() {

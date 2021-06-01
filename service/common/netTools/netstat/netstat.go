@@ -5,15 +5,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/v2rayA/v2rayA/common/errors"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"v2ray.com/core/common/errors"
 )
 
 // Socket states
@@ -129,6 +128,7 @@ type Socket struct {
 
 type Process struct {
 	PID  string
+	PPID string
 	Name string
 }
 
@@ -138,7 +138,7 @@ const (
 )
 
 func FillProcesses(sockets []*Socket) error {
-	f, err := ioutil.ReadDir(pathProc)
+	f, err := os.ReadDir(pathProc)
 	if err != nil {
 		return newError().Base(errors.New(ProcOpenFailed))
 	}
@@ -167,9 +167,11 @@ loop1:
 			}
 		}
 		if inode := isProcessSocket(fn, iNodes); inode != "" {
+			pn, ppid := getProcessInfo(fn)
 			mapInodeSocket[inode].Proc = &Process{
 				PID:  fn,
-				Name: getProcessName(fn),
+				PPID: ppid,
+				Name: pn,
 			}
 			delete(iNodes, inode)
 		}
@@ -186,7 +188,7 @@ func (s *Socket) Process() (*Process, error) {
 	if s.Proc != nil {
 		return s.Proc, nil
 	}
-	f, err := ioutil.ReadDir(pathProc)
+	f, err := os.ReadDir(pathProc)
 	if err != nil {
 		return nil, nil
 	}
@@ -202,9 +204,11 @@ loop1:
 			}
 		}
 		if isProcessSocket(fn, map[string]struct{}{s.inode: {}}) != "" {
+			pn, ppid := getProcessInfo(fn)
 			s.Proc = &Process{
 				PID:  fn,
-				Name: getProcessName(fn),
+				PPID: ppid,
+				Name: pn,
 			}
 			return s.Proc, nil
 		}
@@ -219,7 +223,7 @@ loop1:
 var ErrorNotFound = newError("process not found")
 
 func findProcessID(pname string) (pids []string, err error) {
-	f, err := ioutil.ReadDir(pathProc)
+	f, err := os.ReadDir(pathProc)
 	if err != nil {
 		err = newError().Base(err)
 		return
@@ -235,7 +239,7 @@ loop1:
 				continue loop1
 			}
 		}
-		if getProcessName(fn) == pname {
+		if pn, _ := getProcessInfo(fn); pn == pname {
 			pids = append(pids, fn)
 		}
 	}
@@ -258,16 +262,16 @@ func getProcName(s string) string {
 	return s[:j]
 }
 
-func getProcessName(pid string) (pn string) {
+func getProcessInfo(pid string) (pn string, ppid string) {
 	p := filepath.Join(pathProc, pid, "stat")
-	b, err := ioutil.ReadFile(p)
+	b, err := os.ReadFile(p)
 	if err != nil {
 		err = newError().Base(err)
 		return
 	}
-	sp := bytes.SplitN(b, []byte(" "), 3)
+	sp := bytes.Fields(b)
 	pn = string(sp[1])
-	return getProcName(pn)
+	return getProcName(pn), string(sp[3])
 }
 
 func isProcessSocket(pid string, socketInode map[string]struct{}) string {
@@ -420,7 +424,7 @@ func FillAllProcess(sockets []*Socket) {
 			defer v.processMutex.Unlock()
 		}
 	}
-	f, err := ioutil.ReadDir(pathProc)
+	f, err := os.ReadDir(pathProc)
 	if err != nil {
 		return
 	}
@@ -438,9 +442,11 @@ loop1:
 		socketSet := getProcessSocketSet(fn)
 		for _, s := range socketSet {
 			if socket, ok := mInodeSocket[s]; ok {
+				pn, ppid := getProcessInfo(fn)
 				socket.Proc = &Process{
 					PID:  fn,
-					Name: getProcessName(fn),
+					PPID: ppid,
+					Name: pn,
 				}
 			}
 			delete(mInodeSocket, s)

@@ -27,7 +27,6 @@ labels: bug
  ```bash
  # daemon mode
  journalctl -u v2raya | tail -n 50
- journalctl -u v2ray | tail -n 50
  
  # docker mode
  docker logs v2raya
@@ -39,6 +38,7 @@ labels: bug
 
 ```
 
-### Screenshot
+### v2rayA setting and related screenshot
+Paste your v2rayA setting and problem related screenshot.
 <!-- Paste screenshot if possible -->
 

@@ -94,7 +94,7 @@ function parseURL(u) {
           continue;
         }
         s = seg[i].split("=");
-        ret[s[0]] = s[1];
+        ret[s[0]] = decodeURIComponent(s[1]);
       }
       return ret;
     })(),
@@ -160,7 +160,6 @@ function generateURL({
   a.password = password;
   a.search = query;
   a.hash = hash;
-  console.log(a, a.username, a.password);
   const r = a.href;
   a.remove();
   return r;
@@ -168,6 +167,9 @@ function generateURL({
 
 /*判断一个IPv4的地址是否是内网地址*/
 function isIntranet(url) {
+  if (!url.trim()) {
+    url = location.protocol + "//" + location.host + url;
+  }
   let u = parseURL(url);
   if (u.host === "") {
     u = parseURL(location.protocol + "//" + location.host + url);

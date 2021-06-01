@@ -6,7 +6,7 @@ import (
 	"log"
 	"reflect"
 	"sort"
-	"v2ray.com/core/common/errors"
+	"github.com/v2rayA/v2rayA/common/errors"
 )
 
 func Get(bucket string, key string, val interface{}) (err error) {
@@ -194,7 +194,7 @@ func indexesToBeginTos(indexes []int) []beginTo {
 }
 
 func ListRemove(bucket, key string, indexes []int) error {
-	// TODO: waiting for https://github.com/xujiajun/nutsdb/issues/66
+	// TODO: waiting for https://github.com/xujiajun/nutsdb/issues/93
 	sort.Ints(indexes)
 	return DB().Update(func(tx *nutsdb.Tx) (err error) {
 		//for i := len(indexes) - 1; i >= 0; i-- {

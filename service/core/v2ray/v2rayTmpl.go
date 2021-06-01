@@ -13,7 +13,6 @@ import (
 	"github.com/v2rayA/v2rayA/core/vmessInfo"
 	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/v2rayA/v2rayA/global"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/url"
@@ -48,9 +47,15 @@ type Template struct {
 	Outbounds []Outbound `json:"outbounds"`
 	Routing   struct {
 		DomainStrategy string        `json:"domainStrategy"`
+		DomainMatcher  string        `json:"domainMatcher"`
 		Rules          []RoutingRule `json:"rules"`
 	} `json:"routing"`
-	DNS *DNS `json:"dns,omitempty"`
+	DNS     *DNS     `json:"dns,omitempty"`
+	FakeDns *FakeDns `json:"fakedns,omitempty"`
+}
+type FakeDns struct {
+	IpPool   string `json:"ipPool"`
+	PoolSize int    `json:"poolSize"`
 }
 type RoutingRule struct {
 	Type        string   `json:"type"`
@@ -72,6 +77,7 @@ type Log struct {
 type Sniffing struct {
 	Enabled      bool     `json:"enabled"`
 	DestOverride []string `json:"destOverride"`
+	MetadataOnly bool     `json:"metadataOnly,omitempty"`
 }
 type Inbound struct {
 	Port           int              `json:"port"`
@@ -83,15 +89,16 @@ type Inbound struct {
 	Tag            string           `json:"tag,omitempty"`
 }
 type InboundSettings struct {
-	Auth      string      `json:"auth,omitempty"`
-	UDP       bool        `json:"udp,omitempty"`
-	IP        interface{} `json:"ip,omitempty"`
-	Accounts  []Account   `json:"accounts,omitempty"`
-	Clients   interface{} `json:"clients,omitempty"`
-	Network   string      `json:"network,omitempty"`
-	UserLevel int         `json:"userLevel,omitempty"`
-
-	FollowRedirect bool `json:"followRedirect,omitempty"`
+	Auth           string      `json:"auth,omitempty"`
+	UDP            bool        `json:"udp,omitempty"`
+	IP             interface{} `json:"ip,omitempty"`
+	Accounts       []Account   `json:"accounts,omitempty"`
+	Clients        interface{} `json:"clients,omitempty"`
+	Network        string      `json:"network,omitempty"`
+	UserLevel      int         `json:"userLevel,omitempty"`
+	Address        string      `json:"address,omitempty"`
+	Port           int         `json:"port,omitempty"`
+	FollowRedirect bool        `json:"followRedirect,omitempty"`
 }
 type Account struct {
 	User string `json:"user"`
@@ -328,6 +335,7 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 		o.StreamSettings = &tmplJson.StreamSettings
 		o.StreamSettings.Network = v.Net
 		// 根据传输协议(network)修改streamSettings
+		//TODO: QUIC, gRPC
 		switch strings.ToLower(v.Net) {
 		case "ws":
 			tmplJson.WsSettings.Headers.Host = v.Host
@@ -463,6 +471,8 @@ func ResolveOutbound(v *vmessInfo.VmessInfo, tag string, pluginPort *int) (o Out
 		socksPlugin = true
 	case "pingtunnel":
 		socksPlugin = true
+	case "trojan-go":
+		socksPlugin = true
 	default:
 		return o, newError("unsupported protocol: " + v.Protocol)
 	}
@@ -581,6 +591,17 @@ func (t *Template) SetDNS(v vmessInfo.VmessInfo, supportUDP bool, setting *confi
 	if t.DNS != nil {
 		//修改hosts
 		t.DNS.Hosts = getHosts()
+
+		//fakedns
+		if t.FakeDns != nil {
+			t.DNS.Servers = append(t.DNS.Servers, DnsServer{
+				Address: "fakedns",
+				Domains: []string{
+					"domain:use-fakedns.com",
+					"geosite:geolocation-!cn",
+				},
+			})
+		}
 	}
 	return
 }
@@ -626,17 +647,24 @@ func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []strin
 			IP:          configure.GetDnsListNotNil(),
 			Port:        "53",
 		},
-		RoutingRule{ // 劫持 53 端口流量，使用 V2Ray 的 DNS
-			Type:        "field",
-			Port:        "53",
-			OutboundTag: "dns-out",
-		},
-		RoutingRule{ // DNSPoison
-			Type:        "field",
-			IP:          []string{"240.0.0.0/4"},
-			OutboundTag: "proxy",
-		},
 	)
+	dnsout := RoutingRule{ // 劫持 53 端口流量，使用 V2Ray 的 DNS
+		Type:        "field",
+		Port:        "53",
+		OutboundTag: "dns-out",
+	}
+	if t.FakeDns != nil {
+		dnsout.InboundTag = []string{"dns-in"}
+	} else {
+		t.Routing.Rules = append(t.Routing.Rules,
+			RoutingRule{ // DNSPoison
+				Type:        "field",
+				IP:          []string{"240.0.0.0/4"},
+				OutboundTag: "proxy",
+			},
+		)
+	}
+	t.Routing.Rules = append(t.Routing.Rules, dnsout)
 	if setting.AntiPollution != configure.AntipollutionNone {
 		t.Routing.Rules = append(t.Routing.Rules, RoutingRule{ // 非标准端口暂时安全，直连
 			Type:        "field",
@@ -655,19 +683,6 @@ func (t *Template) SetDNSRouting(v vmessInfo.VmessInfo, dohIPs, dohHosts []strin
 		)
 	}
 	t.Routing.Rules = append(t.Routing.Rules, dohRouting...)
-	t.Routing.Rules = append(t.Routing.Rules,
-		RoutingRule{ // 直连 123 端口 UDP 流量（NTP 协议）
-			Type:        "field",
-			OutboundTag: "direct",
-			Network:     "udp",
-			Port:        "123",
-		},
-		RoutingRule{ // BT流量直连
-			Type:        "field",
-			OutboundTag: "direct",
-			Protocol:    []string{"bittorrent"},
-		},
-	)
 	return
 }
 
@@ -1025,8 +1040,27 @@ func (t *Template) SetOutboundSockopt(supportUDP bool, setting *configure.Settin
 			tmp := setting.TcpFastOpen == configure.Yes
 			t.Outbounds[i].StreamSettings.Sockopt.TCPFastOpen = &tmp
 		}
-		t.Outbounds[i].StreamSettings.Sockopt.Mark = &mark
-		//t.Outbounds[i].StreamSettings.Sockopt.Tos = &tos // Experimental in the future
+		checkAndSetMark(&t.Outbounds[i], mark)
+	}
+}
+func (t *Template) SetInboundListenAddress(setting *configure.Setting) {
+	if setting.IntranetSharing {
+		return
+	}
+	for i := range t.Inbounds {
+		t.Inbounds[i].Listen = "127.0.0.1"
+	}
+}
+func (t *Template) SetInboundFakeDnsDestOverride() {
+	if t.FakeDns == nil {
+		return
+	}
+	for i := range t.Inbounds {
+		if t.Inbounds[i].Sniffing.Enabled == false {
+			continue
+		}
+		t.Inbounds[i].Sniffing.DestOverride = append(t.Inbounds[i].Sniffing.DestOverride, "fakedns")
+		//t.Inbounds[i].Sniffing.DestOverride = []string{"fakedns"}
 	}
 }
 
@@ -1058,6 +1092,19 @@ func (t *Template) SetInbound(setting *configure.Setting) {
 			tproxy = "redirect"
 		}
 		t.AppendDokodemo(&tproxy, 32345, "transparent")
+	}
+	if t.FakeDns != nil {
+		t.Inbounds = append(t.Inbounds, Inbound{
+			Port:     53,
+			Protocol: "dokodemo-door",
+			Listen:   "::",
+			Settings: &InboundSettings{
+				Network: "udp",
+				Address: "2.0.1.7",
+				Port:    53,
+			},
+			Tag: "dns-in",
+		})
 	}
 }
 
@@ -1107,14 +1154,25 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 	// 其中Template是基础配置，替换掉t即可
 	t = tmplJson.Template
 	// 调试模式
-	if global.IsDebug() {
-		ioutil.WriteFile(t.Log.Access, nil, 0777)
-		ioutil.WriteFile(t.Log.Error, nil, 0777)
+	if global.GetEnvironmentConfig().Verbose {
+		t.Log.Loglevel = "info"
+		t.Log.Access = ""
+		t.Log.Error = ""
+	} else if global.IsDebug() {
+		os.WriteFile(t.Log.Access, nil, 0777)
+		os.WriteFile(t.Log.Error, nil, 0777)
 		os.Chmod(t.Log.Access, 0777)
 		os.Chmod(t.Log.Error, 0777)
 		t.Log.Loglevel = "debug"
 	} else {
 		t.Log = nil
+	}
+	// fakedns
+	if entity.ShouldDnsPoisonOpen() == 2 {
+		t.FakeDns = &FakeDns{
+			IpPool:   "198.18.0.0/15",
+			PoolSize: 65535,
+		}
 	}
 	// 解析Outbound
 	o, err := ResolveOutbound(&v, "proxy", &global.GetEnvironmentConfig().PluginListenPort)
@@ -1146,6 +1204,7 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 	//再修改outbounds
 	t.AppendDNSOutbound()
 	//最后是routing
+	t.Routing.DomainMatcher = "mph"
 	t.SetDNSRouting(v, dohIPs, dohHosts, setting, supportUDP)
 	serverIPs, serverDomain := t.SetDirectRuleRouting(v)
 	//添加目标服务器的ip到hosts中
@@ -1162,6 +1221,13 @@ func NewTemplateFromVmessInfo(v vmessInfo.VmessInfo) (t Template, info *entity.E
 	}
 	//置outboundSockopt
 	t.SetOutboundSockopt(supportUDP, setting)
+
+	//置fakedns destOverride
+	t.SetInboundFakeDnsDestOverride()
+
+	//置inbound listen address
+
+	t.SetInboundListenAddress(setting)
 
 	//check dulplicated tags
 	if err = t.CheckDuplicatedTags(); err != nil {
@@ -1226,7 +1292,7 @@ func (t *Template) ToConfigBytes() []byte {
 }
 
 func WriteV2rayConfig(content []byte) (err error) {
-	err = ioutil.WriteFile(asset.GetV2rayConfigPath(), content, os.FileMode(0600))
+	err = os.WriteFile(asset.GetV2rayConfigPath(), content, os.FileMode(0600))
 	if err != nil {
 		return newError("WriteV2rayConfig").Base(err)
 	}
@@ -1241,13 +1307,11 @@ func NewTemplateFromConfig() (t Template, err error) {
 	err = jsoniter.Unmarshal(b, &t)
 	return
 }
-func (t *Template) AddMappingOutbound(v vmessInfo.VmessInfo, inboundPort string, udpSupport bool, pluginPort int, protocol string) (err error) {
-	o, err := ResolveOutbound(&v, "outbound"+inboundPort, &pluginPort)
-	if err != nil {
+
+func checkAndSetMark(o *Outbound, mark int) {
+	if configure.GetSettingNotNil().Transparent == configure.TransparentClose {
 		return
 	}
-	var mark = 0xff
-	//var tos = 184
 	if o.StreamSettings == nil {
 		o.StreamSettings = new(StreamSettings)
 	}
@@ -1255,7 +1319,15 @@ func (t *Template) AddMappingOutbound(v vmessInfo.VmessInfo, inboundPort string,
 		o.StreamSettings.Sockopt = new(Sockopt)
 	}
 	o.StreamSettings.Sockopt.Mark = &mark
-	//o.StreamSettings.Sockopt.Tos = &tos
+}
+
+func (t *Template) AddMappingOutbound(v vmessInfo.VmessInfo, inboundPort string, udpSupport bool, pluginPort int, protocol string) (err error) {
+	o, err := ResolveOutbound(&v, "outbound"+inboundPort, &pluginPort)
+	if err != nil {
+		return
+	}
+	var mark = 0xff
+	checkAndSetMark(&o, mark)
 	t.Outbounds = append(t.Outbounds, o)
 	iPort, err := strconv.Atoi(inboundPort)
 	if err != nil || iPort <= 0 {
@@ -1294,7 +1366,7 @@ func (t *Template) AddMappingOutbound(v vmessInfo.VmessInfo, inboundPort string,
 
 func getHosts() (h Hosts) {
 	h = make(Hosts)
-	b, err := ioutil.ReadFile("/etc/hosts")
+	b, err := os.ReadFile("/etc/hosts")
 	if err != nil {
 		return
 	}

@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"github.com/json-iterator/go"
-	"github.com/v2rayA/v2rayA/common"
 	"net"
 	"net/url"
 	"strings"
@@ -27,15 +26,46 @@ type VmessInfo struct {
 	Protocol      string `json:"protocol"`
 }
 
+func setValue(values *url.Values, key string, value string) {
+	if value == "" {
+		return
+	}
+	values.Set(key, value)
+}
+
 func (v *VmessInfo) ExportToURL() string {
 	switch v.Protocol {
 	case "vless":
-		//FIXME: 临时方案
-		fallthrough
-	case "", "vmess":
-		if v.V == "" {
-			v.V = "2"
+		// https://github.com/XTLS/Xray-core/issues/91
+		var query = make(url.Values)
+		setValue(&query, "type", v.Net)
+		setValue(&query, "security", v.TLS)
+		switch v.Net {
+		case "websocket", "ws", "http", "h2":
+			setValue(&query, "path", v.Path)
+			setValue(&query, "host", v.Host)
+		case "mkcp", "kcp":
+			setValue(&query, "headerType", v.Type)
+			setValue(&query, "seed", v.Path)
 		}
+		//TODO: QUIC, gRPC
+		if v.TLS != "none" {
+			setValue(&query, "sni", v.Host) // FIXME: it may be different from ws's host
+		}
+		if v.TLS == "xtls" {
+			setValue(&query, "flow", v.Flow)
+		}
+
+		U := url.URL{
+			Scheme:   "vless",
+			User:     url.User(v.ID),
+			Host:     net.JoinHostPort(v.Add, v.Port),
+			RawQuery: query.Encode(),
+			Fragment: v.Ps,
+		}
+		return U.String()
+	case "", "vmess":
+		v.V = "2"
 		b, _ := jsoniter.Marshal(v)
 		return "vmess://" + base64.StdEncoding.EncodeToString(b)
 	case "ss":
@@ -79,15 +109,15 @@ func (v *VmessInfo) ExportToURL() string {
 			),
 		)))
 	case "pingtunnel":
-		// pingtunnel://server:URLBASE64(passwd)#URLBASE64(remarks)
-		return fmt.Sprintf("pingtunnel://%v", base64.URLEncoding.EncodeToString([]byte(
-			fmt.Sprintf("%v:%v#%v",
-				v.Add,
-				base64.URLEncoding.EncodeToString([]byte(v.ID)),
-				common.UrlEncoded(v.Ps),
-			),
-		)))
-	case "trojan":
+		// ping-tunnel://passwd@host:port#remarks
+		U := url.URL{
+			Scheme:   "ping-tunnel",
+			User:     url.User(v.ID),
+			Host:     v.Add,
+			Fragment: v.Ps,
+		}
+		return U.String()
+	case "trojan", "trojan-go":
 		// trojan://passwd@server:port#URLESCAPE(remarks)
 		u := &url.URL{
 			Scheme:   "trojan",
@@ -98,11 +128,23 @@ func (v *VmessInfo) ExportToURL() string {
 			Fragment: v.Ps,
 		}
 		q := u.Query()
-		if v.Host != "" {
-			q.Set("sni", v.Host)
-		}
 		if v.AllowInsecure {
 			q.Set("allowInsecure", "1")
+		}
+		if v.Protocol == "trojan-go" {
+			u.Scheme = "trojan-go"
+			if v.Host != "" {
+				fields := strings.SplitN(v.Host, ",", 2)
+				q.Set("sni", fields[0])
+				q.Set("host", fields[1])
+			}
+			q.Set("encryption", v.Type)
+			q.Set("type", v.Net)
+			q.Set("path", v.Path)
+		} else {
+			if v.Host != "" {
+				q.Set("sni", v.Host)
+			}
 		}
 		u.RawQuery = q.Encode()
 		return u.String()

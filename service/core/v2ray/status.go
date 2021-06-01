@@ -45,9 +45,13 @@ func RestartV2rayService() (err error) {
 		params = append(params, "--confdir="+confdir)
 	}
 	log.Println(strings.Join(params, " "))
+	assetDir := asset.GetV2rayLocationAsset()
 	global.V2RayPID, err = os.StartProcess(v2rayBinPath, params, &os.ProcAttr{
 		Dir: dir, //防止找不到v2ctl
-		Env: append(os.Environ(), "V2RAY_LOCATION_ASSET="+asset.GetV2rayLocationAsset()),
+		Env: append(os.Environ(),
+			"V2RAY_LOCATION_ASSET="+assetDir,
+			"XRAY_LOCATION_ASSET="+assetDir,
+		),
 		Files: []*os.File{
 			os.Stderr,
 			os.Stdout,
@@ -108,7 +112,7 @@ func RestartV2rayService() (err error) {
 		}
 
 		if time.Since(startTime) > 15*time.Second {
-			return newError("v2ray-core does not start normally, there may be a problem of the configuration file or the required port is occupied")
+			return newError("v2ray-core does not start normally, check the log for more information")
 		}
 		time.Sleep(1000 * time.Millisecond)
 	}

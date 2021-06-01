@@ -1,7 +1,6 @@
 package v2ray
 
 import (
-	"fmt"
 	"github.com/v2rayA/v2rayA/common"
 	"github.com/v2rayA/v2rayA/common/netTools/netstat"
 	"github.com/v2rayA/v2rayA/common/netTools/ports"
@@ -10,63 +9,11 @@ import (
 	"github.com/v2rayA/v2rayA/core/v2ray/where"
 	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/v2rayA/v2rayA/global"
-	"io/ioutil"
 	"log"
-	"os"
 	"path"
 	"strings"
 	"time"
 )
-
-const (
-	resolverFile  = "/etc/resolv.conf"
-	checkInterval = 3 * time.Second
-)
-
-type DnsHijacker struct {
-	ticker *time.Ticker
-}
-
-func NewDnsHijacker() *DnsHijacker {
-	hij := DnsHijacker{
-		ticker: time.NewTicker(checkInterval),
-	}
-	hij.HijackDNS()
-	go func() {
-		for range hij.ticker.C {
-			hij.HijackDNS()
-		}
-	}()
-	return &hij
-}
-func (h *DnsHijacker) Close() error {
-	h.ticker.Stop()
-	return nil
-}
-
-var hijacker *DnsHijacker
-
-func (h *DnsHijacker) HijackDNS() error {
-	err := ioutil.WriteFile(resolverFile, []byte("# v2rayA DNS hijack\nnameserver 223.5.5.5\nnameserver 114.114.114.114\n"), os.FileMode(0644))
-	if err != nil {
-		err = fmt.Errorf("failed to hijackDNS: [write] %v", err)
-	}
-	return err
-}
-
-func resetDnsHijacker() {
-	if hijacker != nil {
-		hijacker.Close()
-	}
-	hijacker = NewDnsHijacker()
-}
-
-func removeDnsHijacker() {
-	if hijacker != nil {
-		hijacker.Close()
-		hijacker = nil
-	}
-}
 
 func DeleteTransparentProxyRules() {
 	removeDnsHijacker()
@@ -78,12 +25,6 @@ func DeleteTransparentProxyRules() {
 }
 
 func WriteTransparentProxyRules(preprocess *func(c *iptables.SetupCommands)) error {
-	if entity.ShouldDnsPoisonOpen() {
-		if e := iptables.DropSpoofing.GetSetupCommands().Setup(preprocess); e != nil {
-			log.Println(newError("[WARNING] DropSpoofing can't be enable").Base(e))
-			iptables.DropSpoofing.GetCleanCommands().Clean()
-		}
-	}
 	setting := configure.GetSettingNotNil()
 	if global.SupportTproxy && !setting.EnhancedMode {
 		if err := iptables.Tproxy.GetSetupCommands().Setup(preprocess); err == nil {
@@ -100,7 +41,16 @@ func WriteTransparentProxyRules(preprocess *func(c *iptables.SetupCommands)) err
 			global.SupportTproxy = false
 		}
 	} else {
+		if entity.ShouldDnsPoisonOpen() == 1 {
+			if e := iptables.DropSpoofing.GetSetupCommands().Setup(preprocess); e != nil {
+				log.Println(newError("[WARNING] DropSpoofing can't be enable").Base(e))
+				iptables.DropSpoofing.GetCleanCommands().Clean()
+			}
+		}
 		if err := iptables.Redirect.GetSetupCommands().Setup(preprocess); err == nil {
+			if setting.AntiPollution != configure.AntipollutionClosed {
+				resetDnsHijacker()
+			}
 			iptables.SetWatcher(&iptables.Redirect)
 		} else {
 			log.Println(err)
@@ -177,7 +127,7 @@ func CheckAndSetupTransparentProxy(checkRunning bool) (err error) {
 		if setting.AntiPollution == configure.AntipollutionClosed {
 			commands = common.TrimLineContains(commands, "udp")
 		}
-		if entity.ShouldDnsPoisonOpen() {
+		if entity.ShouldDnsPoisonOpen() == 1 {
 			commands = common.TrimLineContains(commands, "240.0.0.0/4")
 		}
 		*c = iptables.SetupCommands(commands)
