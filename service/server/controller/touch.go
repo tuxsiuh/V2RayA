@@ -10,11 +10,23 @@ import (
 )
 
 func GetTouch(ctx *gin.Context) {
-	running := v2ray.IsV2RayRunning()
-	t := touch.GenerateTouch()
-	if !running { //如果没有运行，把connectedServer删掉，防止前端错误渲染
-		t.ConnectedServer = nil
+	updatingMu.Lock()
+	if updating {
+		common.ResponseError(ctx, processingErr)
+		updatingMu.Unlock()
+		return
 	}
+	updatingMu.Unlock()
+	defer func() {
+		updatingMu.Lock()
+		updatingMu.Unlock()
+	}()
+	getTouch(ctx)
+
+}
+func getTouch(ctx *gin.Context) {
+	running := v2ray.ProcessManager.Running()
+	t := touch.GenerateTouch()
 	common.ResponseSuccess(ctx, gin.H{
 		"running": running,
 		"touch":   t,
@@ -22,10 +34,24 @@ func GetTouch(ctx *gin.Context) {
 }
 
 func DeleteTouch(ctx *gin.Context) {
+	updatingMu.Lock()
+	if updating {
+		common.ResponseError(ctx, processingErr)
+		updatingMu.Unlock()
+		return
+	}
+	updating = true
+	updatingMu.Unlock()
+	defer func() {
+		updatingMu.Lock()
+		updating = false
+		updatingMu.Unlock()
+	}()
+
 	var ws configure.Whiches
 	err := ctx.ShouldBindJSON(&ws)
 	if err != nil {
-		common.ResponseError(ctx, logError(nil, "bad request"))
+		common.ResponseError(ctx, logError("bad request"))
 		return
 	}
 	err = service.DeleteWhich(ws.Get())
@@ -33,5 +59,5 @@ func DeleteTouch(ctx *gin.Context) {
 		common.ResponseError(ctx, logError(err))
 		return
 	}
-	GetTouch(ctx)
+	getTouch(ctx)
 }

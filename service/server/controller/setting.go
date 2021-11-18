@@ -22,19 +22,34 @@ func GetSetting(ctx *gin.Context) {
 }
 
 func PutSetting(ctx *gin.Context) {
+	updatingMu.Lock()
+	if updating {
+		common.ResponseError(ctx, processingErr)
+		updatingMu.Unlock()
+		return
+	}
+	updating = true
+	updatingMu.Unlock()
+	defer func() {
+		updatingMu.Lock()
+		updating = false
+		updatingMu.Unlock()
+	}()
+
 	var data configure.Setting
 	err := ctx.ShouldBindJSON(&data)
 	if err != nil {
-		common.ResponseError(ctx, logError(err, "bad request"))
+		common.ResponseError(ctx, logError("bad request"))
 		return
 	}
 	if data.MuxOn == configure.Yes && (data.Mux < 1 || data.Mux > 1024) {
-		common.ResponseError(ctx, logError(nil, "mux should be between 1 and 1024"))
+		common.ResponseError(ctx, logError("mux should be between 1 and 1024"))
 		return
 	}
 	err = service.UpdateSetting(&data)
 	if err != nil {
 		common.ResponseError(ctx, logError(err))
+		_ = service.StopV2ray()
 		return
 	}
 	common.ResponseSuccess(ctx, nil)

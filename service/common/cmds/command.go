@@ -1,17 +1,15 @@
 package cmds
 
 import (
-	"bytes"
+	"fmt"
+	"github.com/v2rayA/v2rayA/pkg/util/log"
 	"os/exec"
 	"strings"
 )
 
 func IsCommandValid(command string) bool {
-	out, err := exec.Command("sh", "-c", "type '"+command+"'").CombinedOutput()
-	if err != nil {
-		out, err = exec.Command("sh", "-c", "command -v '"+command+"'").CombinedOutput()
-	}
-	return err == nil && len(bytes.TrimSpace(out)) > 0
+	_, err := exec.LookPath(command)
+	return err == nil
 }
 
 func ExecCommands(commands string, stopWhenError bool) error {
@@ -24,8 +22,9 @@ func ExecCommands(commands string, stopWhenError bool) error {
 		}
 		out, err := exec.Command("sh", "-c", line).CombinedOutput()
 		if err != nil {
-			e = newError(line, " ", string(out)).Base(err)
+			e = fmt.Errorf("ExecCommands: %v %v: %w", line, string(out), err)
 			if stopWhenError {
+				log.Trace("%v", e)
 				return e
 			}
 		}

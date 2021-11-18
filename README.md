@@ -10,8 +10,6 @@ Thanks to the advantages of Web GUI, you can not only use it on your local compu
 
 Project：https://github.com/v2rayA/v2rayA
 
-Frontend demo: https://v2raya.mzz.pub http://v.mzz.pub
-
 
 ## Usage
 
@@ -43,10 +41,12 @@ See [**v2rayA - Wiki**](https://github.com/v2rayA/v2rayA/wiki/Usage)
 
 [Loyalsoldier/v2ray-rules-dat](https://github.com/Loyalsoldier/v2ray-rules-dat)
 
+[zfl9/ss-tproxy](https://github.com/zfl9/ss-tproxy/blob/master/ss-tproxy)
+
 ## Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/v2rayA/v2rayA.svg)](https://starchart.cc/v2rayA/v2rayA)
 
 ## License
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: AGPL v3-only](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)

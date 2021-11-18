@@ -14,7 +14,7 @@ func PostImport(ctx *gin.Context) {
 	}
 	err := ctx.ShouldBindJSON(&data)
 	if err != nil {
-		common.ResponseError(ctx, logError(nil, "bad request"))
+		common.ResponseError(ctx, logError("bad request"))
 		return
 	}
 	err = service.Import(data.URL, data.Which)
@@ -22,5 +22,5 @@ func PostImport(ctx *gin.Context) {
 		common.ResponseError(ctx, logError(err))
 		return
 	}
-	GetTouch(ctx)
+	getTouch(ctx)
 }

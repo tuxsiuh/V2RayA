@@ -3,17 +3,17 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/v2rayA/v2rayA/common"
-	"github.com/v2rayA/v2rayA/core/v2ray"
+	"github.com/v2rayA/v2rayA/conf"
 	"github.com/v2rayA/v2rayA/core/v2ray/asset/gfwlist"
+	"github.com/v2rayA/v2rayA/core/v2ray/service"
 	"github.com/v2rayA/v2rayA/core/v2ray/where"
-	"github.com/v2rayA/v2rayA/global"
 	"net/http"
 )
 
 func GetVersion(ctx *gin.Context) {
 	var dohValid string
 	var vlessValid int
-	var iptablesMode string
+	var lite int
 
 	ver, err := where.GetV2rayServiceVersion()
 	if err == nil {
@@ -29,26 +29,25 @@ func GetVersion(ctx *gin.Context) {
 				}
 			}
 		}
-		err = v2ray.CheckDohSupported(ver)
+		err = service.CheckDohSupported()
 	}
 	if err == nil {
 		dohValid = "yes"
 	} else {
 		dohValid = err.Error()
 	}
-	if global.SupportTproxy {
-		iptablesMode = "tproxy"
-	} else {
-		iptablesMode = "redirect"
+	if conf.GetEnvironmentConfig().Lite {
+		lite = 1
 	}
 	common.ResponseSuccess(ctx, gin.H{
-		"version":       global.Version,
-		"foundNew":      global.FoundNew,
-		"remoteVersion": global.RemoteVersion,
-		"serviceValid":  v2ray.IsV2rayServiceValid(),
-		"dohValid":      dohValid,
-		"vlessValid":    vlessValid,
-		"iptablesMode":  iptablesMode, //仅代表是否支持tproxy，真实iptables所使用的表还要看是否是增强模式
+		"version":          conf.Version,
+		"foundNew":         conf.FoundNew,
+		"remoteVersion":    conf.RemoteVersion,
+		"serviceValid":     service.IsV2rayServiceValid(),
+		"dohValid":         dohValid,
+		"vlessValid":       vlessValid,
+		"lite":             lite,
+		"loadBalanceValid": service.CheckObservatorySupported() == nil,
 	})
 }
 

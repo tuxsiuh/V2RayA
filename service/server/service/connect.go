@@ -1,107 +1,118 @@
 package service
 
 import (
+	"fmt"
 	"github.com/v2rayA/v2rayA/core/ipforward"
 	"github.com/v2rayA/v2rayA/core/v2ray"
-	"github.com/v2rayA/v2rayA/core/v2ray/asset/gfwlist"
+	"github.com/v2rayA/v2rayA/core/v2ray/asset"
+	"github.com/v2rayA/v2rayA/core/v2ray/service"
 	"github.com/v2rayA/v2rayA/db/configure"
-	"github.com/v2rayA/v2rayA/plugin"
-	"log"
-	"net"
-	"os"
+	"github.com/v2rayA/v2rayA/pkg/util/log"
 )
 
-func Disconnect() (err error) {
-	plugin.GlobalPlugins.CloseAll()
-	err = v2ray.StopV2rayService()
+func StopV2ray() (err error) {
+	v2ray.ProcessManager.Stop(true)
+	return nil
+}
+func StartV2ray() (err error) {
+	if css := configure.GetConnectedServers(); css.Len() == 0 {
+		return fmt.Errorf("failed: no server is selected. please select at least one server")
+	}
+	return v2ray.UpdateV2RayConfig()
+}
+
+func IsClassicMode() bool {
+	supportLoadBalance := service.CheckObservatorySupported() == nil
+	singleOutbound := len(configure.GetOutbounds()) <= 1
+	return singleOutbound && !supportLoadBalance
+}
+
+func Disconnect(which configure.Which, clearOutbound bool) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to disconnect: %w", err)
+		}
+	}()
+	lastConnected := configure.GetConnectedServersByOutbound(which.Outbound)
+	if clearOutbound {
+		err = configure.ClearConnects(which.Outbound)
+	} else {
+		err = configure.RemoveConnect(which)
+	}
 	if err != nil {
 		return
 	}
-	err = configure.ClearConnected()
-	if err != nil {
-		return
+	//update the v2ray config and restart v2ray
+	if v2ray.ProcessManager.Running() || IsClassicMode() {
+		defer func() {
+			if err != nil && lastConnected != nil && v2ray.ProcessManager.Running() {
+				_ = configure.OverwriteConnects(lastConnected)
+				_ = v2ray.UpdateV2RayConfig()
+			}
+		}()
+		if err = v2ray.UpdateV2RayConfig(); err != nil {
+			return
+		}
 	}
 	return
 }
 
 func checkAssetsExist(setting *configure.Setting) error {
 	//FIXME: non-fully check
-	if setting.PacMode == configure.GfwlistMode || setting.Transparent == configure.TransparentGfwlist {
-		if !gfwlist.LoyalsoldierSiteDatExists() {
-			return newError("GFWList file not exists. Try updating GFWList please")
+	if setting.RulePortMode == configure.GfwlistMode || setting.Transparent == configure.TransparentGfwlist {
+		if !asset.LoyalsoldierSiteDatExists() {
+			return fmt.Errorf("GFWList file not exists. Try updating GFWList please")
 		}
 	}
 	return nil
 }
 
-const resolvConf = "/etc/resolv.conf"
-
-func writeResolvConf() {
-	os.WriteFile(resolvConf, []byte("nameserver 223.5.5.5"), 0644)
-}
-
-func checkResolvConf() {
-	if _, err := os.Stat(resolvConf); os.IsNotExist(err) {
-		writeResolvConf()
-	} else {
-		errCnt := 0
-		maxTry := 2
-		for {
-			addrs, err := net.LookupHost("apple.com")
-			if len(addrs) == 0 || err != nil {
-				errCnt++
-				if errCnt <= maxTry {
-					continue
-				}
-			}
-			break
-		}
-		if errCnt >= maxTry {
-			log.Println("[warning] There may be no network or dns manager conflicting with v2rayA. If problems occur, paste your file /etc/resolv.conf for help.")
-			writeResolvConf()
-		}
-	}
-}
-
 func Connect(which *configure.Which) (err error) {
-	log.Println("Connect: begin")
-	defer log.Println("Connect: done")
+	log.Trace("Connect: begin")
+	defer log.Trace("Connect: done")
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("failed to connect: %w", err)
+		}
+	}()
 	setting := GetSetting()
 	if err = checkAssetsExist(setting); err != nil {
 		return
 	}
 	if which == nil {
-		return newError("which can not be nil")
+		return fmt.Errorf("which can not be nil")
 	}
-	checkResolvConf()
-	//配置ip转发
-	if setting.IntranetSharing != ipforward.IsIpForwardOn() {
-		err = ipforward.WriteIpForward(setting.IntranetSharing)
-		if err != nil {
+	//configure the ip forward
+	if setting.IpForward != ipforward.IsIpForwardOn() {
+		e := ipforward.WriteIpForward(setting.IpForward)
+		if e != nil {
+			log.Warn("Connect: %v", e)
+		}
+	}
+	//locate server
+	currentConnected := configure.GetConnectedServersByOutbound(which.Outbound)
+	defer func() {
+		// if error occurs, restore the result of connecting
+		if err != nil && currentConnected != nil && v2ray.ProcessManager.Running() {
+			_ = configure.OverwriteConnects(currentConnected)
+			_ = v2ray.UpdateV2RayConfig()
+		}
+	}()
+	//save the result of connecting to database
+	supportLoadBalance := service.CheckObservatorySupported() == nil
+	if !supportLoadBalance {
+		if err = configure.ClearConnects(which.Outbound); err != nil {
 			return
 		}
 	}
-	//定位Server
-	tsr, err := which.LocateServer()
-	if err != nil {
-		log.Println(err)
+	if err = configure.AddConnect(*which); err != nil {
 		return
 	}
-	cs := configure.GetConnectedServer()
-	defer func() {
-		if err != nil && cs != nil && v2ray.IsV2RayRunning() {
-			_ = configure.SetConnect(cs)
+	//update the v2ray config and start/restart v2ray
+	if v2ray.ProcessManager.Running() || IsClassicMode() {
+		if err = v2ray.UpdateV2RayConfig(); err != nil {
+			return
 		}
-	}()
-	//unset connectedServer to avoid refresh in advance
-	_ = configure.ClearConnected()
-	//根据找到的Server更新V2Ray的配置
-	err = v2ray.UpdateV2RayConfig(&tsr.VmessInfo)
-	if err != nil {
-		return
 	}
-	//保存节点连接成功的结果
-	err = configure.SetConnect(which)
-	//v2ray.EnableV2rayService()
 	return
 }

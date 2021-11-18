@@ -52,18 +52,18 @@ module.exports = {
   // publicPath:process.env.NODE_ENV === 'production'
   // ? '/v2rayA/'
   // : '/',
-  outputDir: "../web",
+  outputDir: process.env.OUTPUT_DIR || "../web",
 
-  pwa: {
-    name: "v2rayA",
-    // themeColor: "#FFDD57",
-    msTileColor: "#fff",
-    appleMobileWebAppCapable: "yes",
-    appleMobileWebAppStatusBarStyle: "white",
-    workboxOptions: {
-      skipWaiting: true
-    }
-  },
+  // pwa: {
+  //   name: "v2rayA",
+  //   themeColor: "#FFDD57",
+  //   msTileColor: "#fff",
+  //   appleMobileWebAppCapable: "yes",
+  //   appleMobileWebAppStatusBarStyle: "white",
+  //   workboxOptions: {
+  //     skipWaiting: true
+  //   }
+  // },
 
   lintOnSave: false,
 

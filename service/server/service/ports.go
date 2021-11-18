@@ -2,28 +2,18 @@ package service
 
 import (
 	"fmt"
-	"github.com/v2rayA/v2rayA/common/netTools/netstat"
-	ports2 "github.com/v2rayA/v2rayA/common/netTools/ports"
 	"github.com/v2rayA/v2rayA/core/v2ray"
-	"github.com/v2rayA/v2rayA/core/v2ray/where"
 	"github.com/v2rayA/v2rayA/db/configure"
-	"path"
 	"strconv"
 )
 
-func GetPortsDefault() configure.Ports {
-	p := configure.GetPorts()
-	if p == nil {
-		p = new(configure.Ports)
-		p.Socks5 = 20170
-		p.Http = 20171
-		p.HttpWithPac = 20172
-	}
+func GetPorts() configure.Ports {
+	p := configure.GetPortsNotNil()
 	return *p
 }
 
 func SetPorts(ports *configure.Ports) (err error) {
-	p := GetPortsDefault()
+	origin := GetPorts()
 	set := map[int]struct{}{}
 	cnt := 0
 	if ports.Socks5 != 0 {
@@ -38,45 +28,46 @@ func SetPorts(ports *configure.Ports) (err error) {
 		set[ports.HttpWithPac] = struct{}{}
 		cnt++
 	}
+	if ports.VlessGrpc != 0 {
+		set[ports.VlessGrpc] = struct{}{}
+		cnt++
+	}
 	if cnt > len(set) {
-		return newError("ports duplicate. check it")
+		return fmt.Errorf("ports duplicate. check it")
 	}
-	detectSyntax := make([]string, 0, 3)
-	if ports.Socks5 != p.Socks5 {
-		p.Socks5 = ports.Socks5
-		if p.Socks5 != 0 {
-			detectSyntax = append(detectSyntax, strconv.Itoa(p.Socks5)+":tcp,udp")
+	detectSyntax := make([]string, 0)
+	if ports.Socks5 != origin.Socks5 {
+		origin.Socks5 = ports.Socks5
+		if origin.Socks5 != 0 {
+			detectSyntax = append(detectSyntax, strconv.Itoa(origin.Socks5)+":tcp,udp")
 		}
 	}
-	if ports.Http != p.Http {
-		p.Http = ports.Http
-		if p.Http != 0 {
-			detectSyntax = append(detectSyntax, strconv.Itoa(p.Http)+":tcp")
+	if ports.Http != origin.Http {
+		origin.Http = ports.Http
+		if origin.Http != 0 {
+			detectSyntax = append(detectSyntax, strconv.Itoa(origin.Http)+":tcp")
 		}
 	}
-	if ports.HttpWithPac != p.HttpWithPac {
-		p.HttpWithPac = ports.HttpWithPac
-		if p.HttpWithPac != 0 {
-			detectSyntax = append(detectSyntax, strconv.Itoa(p.HttpWithPac)+":tcp")
+	if ports.HttpWithPac != origin.HttpWithPac {
+		origin.HttpWithPac = ports.HttpWithPac
+		if origin.HttpWithPac != 0 {
+			detectSyntax = append(detectSyntax, strconv.Itoa(origin.HttpWithPac)+":tcp")
 		}
 	}
-	var (
-		o bool
-		v *netstat.Socket
-	)
-	if o, v, err = ports2.IsPortOccupied(detectSyntax); o {
-		if err != nil {
-			return
-		}
-		process, err := v.Process()
-		v2rayPath, _ := where.GetV2rayBinPath()
-		if err == nil && process.Name != path.Base(v2rayPath) {
-			return newError(fmt.Sprintf("port %v is occupied by %v", v.LocalAddress.Port, process.Name))
+	if ports.VlessGrpc != origin.VlessGrpc {
+		origin.VlessGrpc = ports.VlessGrpc
+		if origin.VlessGrpc != 0 {
+			detectSyntax = append(detectSyntax, strconv.Itoa(origin.VlessGrpc)+":tcp")
 		}
 	}
-	err = configure.SetPorts(&p)
-	if err != nil {
-		return
+	if err = v2ray.PortOccupied(detectSyntax); err != nil {
+		return err
 	}
-	return v2ray.UpdateV2RayConfig(nil)
+	if err = configure.SetPorts(&origin); err != nil {
+		return err
+	}
+	if v2ray.ProcessManager.Running() {
+		err = v2ray.UpdateV2RayConfig()
+	}
+	return
 }

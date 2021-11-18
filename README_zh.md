@@ -10,8 +10,6 @@ v2rayA 致力于提供最简单的操作，满足绝大部分需求。
 
 项目地址：https://github.com/v2rayA/v2rayA
 
-前端 demo: https://v2raya.mzz.pub http://v.mzz.pub
-
 
 ## 使用方法
 
@@ -45,6 +43,8 @@ v2rayA主要提供了下述使用方法：
 
 [Loyalsoldier/v2ray-rules-dat](https://github.com/Loyalsoldier/v2ray-rules-dat)
 
+[zfl9/ss-tproxy](https://github.com/zfl9/ss-tproxy/blob/master/ss-tproxy)
+
 ## 协议
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: AGPL v3-only](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)

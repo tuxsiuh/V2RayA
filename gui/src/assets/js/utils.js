@@ -1,6 +1,6 @@
 import CONST from "./const.js";
 
-function locateServer(touch, whichServer) {
+function _locateServer(touch, whichServer) {
   let ind = whichServer.id - 1;
   let sub = whichServer.sub;
   if (whichServer._type === CONST.ServerType) {
@@ -9,6 +9,20 @@ function locateServer(touch, whichServer) {
     return touch.subscriptions[sub].servers[ind];
   }
   return null;
+}
+
+function locateServer(touch, whichServer) {
+  if (whichServer instanceof Array) {
+    const servers = [];
+    for (const w of whichServer) {
+      const server = _locateServer(touch, w);
+      if (server) {
+        servers.push(server);
+      }
+    }
+    return servers;
+  }
+  return _locateServer(touch, whichServer);
 }
 
 function handleResponse(res, that, suc, err, fail) {
@@ -81,7 +95,11 @@ function parseURL(u) {
     password: a.password,
     protocol: fakeProto ? protocol : a.protocol.replace(":", ""),
     host: a.hostname,
-    port: a.port ? parseInt(a.port) : 80,
+    port: a.port
+      ? parseInt(a.port)
+      : protocol === "https" || protocol === "wss"
+      ? 443
+      : 80,
     query: a.search,
     params: (function() {
       var ret = {},
@@ -128,6 +146,7 @@ function generateURL({
   }
   let user = "";
   if (username || password) {
+    console.log(username, password, protocol ? protocol : "http://");
     if (username && password) {
       user = `${username}:${password}@`;
     } else {
@@ -135,6 +154,7 @@ function generateURL({
     }
   }
   let query = "";
+  console.log(params);
   if (params) {
     let first = true;
     for (const k in params) {
@@ -149,106 +169,21 @@ function generateURL({
       query += `${k}=${encodeURIComponent(params[k])}`;
     }
   }
+  console.log(query);
   path = path || "";
   if (path && path.length > 0 && path[0] !== "/") {
     path = "/" + path;
   }
-  a.href = `${protocol ? protocol : "http://"}${user}${host}${
-    port ? `:${port}` : ""
-  }${path ? path : ""}`;
-  a.username = username;
-  a.password = password;
-  a.search = query;
+  a.href = `http://${user}${host}${port ? `:${port}` : ""}${path ? path : ""}`;
+  console.log(
+    `http://${user}${host}${port ? `:${port}` : ""}${path ? path : ""}`
+  );
+  a.search = query.length ? `?${query}` : "";
   a.hash = hash;
-  const r = a.href;
+  const r = (protocol ? protocol : "http://") + a.href.substr(7);
   a.remove();
+  console.log(r, a.href);
   return r;
-}
-
-/*判断一个IPv4的地址是否是内网地址*/
-function isIntranet(url) {
-  if (!url.trim()) {
-    url = location.protocol + "//" + location.host + url;
-  }
-  let u = parseURL(url);
-  if (u.host === "") {
-    u = parseURL(location.protocol + "//" + location.host + url);
-  }
-  let host = u.host;
-  let arr = host.split(".");
-  if (arr.length !== 4) {
-    return host === "localhost" || host === "local";
-  }
-  if (arr.some(p => parseInt(p) < 0 || parseInt(p) > 255)) {
-    //每一位必须是[0,255]
-    return false;
-  }
-  let bin = ""; //传入的IP的二进制表示
-  arr.forEach(p => {
-    let t = parseInt(p).toString(2);
-    bin += "0".repeat(8 - t.length) + t;
-  });
-  const list = [
-    "0.0.0.0/32",
-    "10.0.0.0/8",
-    "127.0.0.0/8",
-    "169.254.0.0/16",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
-    "224.0.0.0/4",
-    "240.0.0.0/4"
-  ];
-  return list.some(mask => {
-    let arr = mask.split("/");
-    let prefix = arr[0],
-      suffix = arr[1];
-    arr = prefix.split(".");
-    let b = "";
-    arr.forEach(p => {
-      let t = parseInt(p).toString(2);
-      b += "0".repeat(8 - t.length) + t;
-    });
-    suffix = parseInt(suffix);
-    let is = true;
-    for (let i = 0; i < suffix; i++) {
-      if (b[i] !== bin[i]) {
-        is = false;
-        break;
-      }
-    }
-    return is;
-  });
-}
-
-function isVersionGreaterEqual(va, vb) {
-  if (va === "debug" || va === "unstable") {
-    return true;
-  }
-  if (vb === "debug" || vb === "unstable") {
-    return false;
-  }
-  va = va.trim();
-  vb = vb.trim();
-  if (va.length > 0 && va[0] === "v") {
-    va = va.substr(1);
-  }
-  if (vb.length > 0 && vb[0] === "v") {
-    vb = vb.substr(1);
-  }
-  va.replace("-", ".");
-  vb.replace("-", ".");
-  let a = va.split(".");
-  let b = vb.split(".");
-  let minlen = Math.min(a.length, b.length);
-  for (let i = 0; i < minlen; i++) {
-    if (parseInt(a[i]) < parseInt(b[i])) {
-      return false;
-    }
-    if (parseInt(a[i]) > parseInt(b[i])) {
-      return true;
-    }
-  }
-  return a.length >= b.length;
 }
 
 function toInt(s) {
@@ -267,7 +202,5 @@ export {
   handleResponse,
   parseURL,
   generateURL,
-  isIntranet,
-  isVersionGreaterEqual,
   toInt
 };

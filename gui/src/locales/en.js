@@ -6,7 +6,7 @@ export default {
     v2rayCoreStatus: "Status of v2ray-core",
     checkRunning: "Checking",
     isRunning: "Running",
-    notRunning: "Stopped",
+    notRunning: "Ready",
     notLogin: "Login please",
     latest: "Latest",
     local: "Local",
@@ -14,7 +14,8 @@ export default {
     fail: "FAIL",
     message: "Message",
     none: "none",
-    optional: "optional"
+    optional: "optional",
+    loadBalance: "Load Balance"
   },
   welcome: {
     title: "Welcome",
@@ -23,7 +24,7 @@ export default {
     newVersion: "Detected new version: {version}",
     messages: [
       "There is no server.",
-      "You can create a server or import a subscription. Vmess, SS and SSR are supported."
+      "You can create/import a server or import a subscription."
     ]
   },
   v2ray: {
@@ -34,7 +35,13 @@ export default {
     name: "Server Name",
     address: "Server Address",
     protocol: "Protocol",
-    latency: "Latency"
+    latency: "Latency",
+    lastSeenTime: "Last seen time",
+    lastTryTime: "Last try time",
+    messages: {
+      notAllowInsecure:
+        "According to the docs of {name}, if you use {name}, AllowInsecure will be forbidden."
+    }
   },
   subscription: {
     host: "Host",
@@ -51,8 +58,10 @@ export default {
     delete: "Delete",
     create: "Create",
     import: "Import",
+    inBatch: "In batch",
     connect: "Connect",
     disconnect: "Disconnect",
+    select: "Select",
     login: "Login",
     logout: "Logout",
     configure: "Configure",
@@ -65,14 +74,15 @@ export default {
     helpManual: "Help & Manual",
     yes: "Yes",
     no: "No",
-    switchSite: "Switch to alternate site"
+    switchSite: "Switch to alternate site",
+    addOutbound: "Add an outbound"
   },
   register: {
     title: "Create an admin account first",
     messages: [
       "Remember your admin account which is importantly used to login.",
       "Account information is stored in local. We never send information to any server.",
-      "Once password was forgot, you could delete the config file and restart v2rayA service to reset."
+      "Once password was forgot, you could use v2raya --reset-password to reset."
     ]
   },
   login: {
@@ -82,15 +92,16 @@ export default {
   },
   setting: {
     transparentProxy: "Transparent Proxy",
+    transparentType: "Transparent Proxy Implementation",
     pacMode: "Traffic Splitting Mode of Rule Port",
     preventDnsSpoofing: "Prevent DNS Spoofing",
+    specialMode: "Special Mode",
     mux: "Multiplex",
     autoUpdateSub: "Automatically Update Subscriptions",
     autoUpdateGfwlist: "Automatically Update GFWList",
     preferModeWhenUpdate: "Mode when Upadate Subscriptions and GFWList",
-    ipForwardOn: "Share in LAN",
-    enhancedModeOn: "Enhanced",
-    dnsForceModeOn: "Disable CDS",
+    ipForwardOn: "IP Forward",
+    portSharingOn: "Port Sharing",
     concurrency: "Concurrency",
     options: {
       global: "Proxy All Traffic",
@@ -111,20 +122,22 @@ export default {
       updateGfwlistWhenStart: "Update GFWList When Service Starts",
       updateGfwlistAtIntervals: "Update GFWList Regularly (Unit: hour)",
       dependTransparentMode: "Depend on Transparent Proxy",
-      closed: "Off"
+      closed: "Off",
+      advanced: "Advanced Setting"
     },
     messages: {
       gfwlist:
         "Based on modified time of file which sometimes is after latest version online.",
       transparentProxy:
-        "If transparent proxy on, no extra configure needed and all TCP traffic will pass through the v2rayA. Providing proxy service to other computers as the gateway should make option 'Share in LAN' on.",
+        "If transparent proxy on, no extra configure needed and all TCP traffic will pass through the v2rayA. Providing proxy service to other computers and docker as the gateway should make option 'Share in LAN' on.",
+      transparentType:
+        "★tproxy: support UDP, but not support docker. ★redirect: friendly for docker, but does not support UDP and need to occupy local port 53 for dns anti-pollution.",
       pacMode: `Here you can set the splitting traffic rule of rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
       preventDnsSpoofing:
-        "If there is a problem with transparent proxy, try setting 'Prevent DNS Spoofing' as 'Off' or turn on 'Enhanced Mode' (v0.7.0.2+)." +
         "★Forward DNS Request: DNS requests will be forwarded by proxy server." +
-        "★DoH(dns-over-https, v2ray-core: 4.22.0+): Stable and fast DoH services are suggested." +
-        "★Enhanced Mode(v0.7.0.2+) faster but not support udp and ipv6" +
-        "★Disable CDS(v1.1.3+, Disable China Domain Shunt): Do not shunt DNS query of China Domains",
+        "★DoH(dns-over-https, v2ray-core: 4.22.0+): DNS over HTTPS.",
+      specialMode:
+        "★supervisor：Monitor dns pollution, intercept in advance, use sniffing mechanism of v2ray-core to prevent pollution. ★fakedns：Use the fakens strategy to speed up the resolving.",
       tcpFastOpen:
         "Simplify TCP handshake process to speed up connection establishment. Risk of emphasizing characteristics of packets exists. It may cause failed to connect if your system does not support it.",
       mux:
@@ -134,7 +147,8 @@ export default {
                           <p>Whitelist:</p>
                           <p>TCP: {tcpPorts}</p>
                           <p>UDP: {udpPorts}</p>`,
-      xtlsNotWithWs: `xtls cannot work with websocket`
+      xtlsNotWithWs: `xtls cannot work with websocket`,
+      grpcShouldWithTls: `gRPC must be with TLS`
     }
   },
   customAddressPort: {
@@ -143,6 +157,8 @@ export default {
     portSocks5: "Port of SOCKS5",
     portHttp: "Port of HTTP",
     portHttpWithPac: "Port of HTTP(with Rule)",
+    portVlessGrpc: "Port of VLESS-GRPC(with Rule)",
+    portVlessGrpcPrompt: "Link of VLESS-GRPC port",
     messages: [
       "Service address default as 0.0.0.0:2017 can be changed by setting environment variable <code>V2RAYA_ADDRESS</code> and command argument<code>--address</code>.",
       "If you start v2raya docker container with port mapping instead of <code>--network host</code>, you can remapping ports in this way.",
@@ -184,11 +200,11 @@ export default {
   },
   dns: {
     title: "Configure DNS Server",
-    dnsPriorityList: "Priority list of DNS Servers",
+    internalQueryServers: "Domain Query Servers",
+    externalQueryServers: "External Domain Query Servers",
     messages: [
-      "In the 'Prevent DNS Hijack Only' mode, the list is just the DNS configuration. In other modes, the first item in the list is the DNS server for querying Chinese mainland addresses.",
-      "Please fill in the IP or domain of the DNS server (without port) in the list. Ports other than 53 are not supported.",
-      "Optimally, place exact two lines above. The list will restore to default after saving with empty content."
+      '"@:(dns.internalQueryServers)" are designed to be used to look up domain names in China, while "@:(dns.externalQueryServers)" be used to look up others.',
+      '"@:(dns.internalQueryServers)" will be used to look up all domain names if "@:(dns.externalQueryServers)" is empty.'
     ]
   },
   egressPortWhitelist: {
@@ -218,6 +234,7 @@ export default {
     hostObfuscation: "Host",
     pathObfuscation: "Path",
     seedObfuscation: "Seed",
+    username: "Username",
     password: "Password",
     origin: "origin"
   },
@@ -226,6 +243,7 @@ export default {
   },
   import: {
     message: "Input a server link or subscription address:",
+    batchMessage: "One server link per line:",
     qrcodeError: "Failed to find a valid QRCode, please try again"
   },
   delete: {
@@ -269,5 +287,10 @@ export default {
   },
   routingA: {
     messages: ["click the button 'Help&Manual' for help"]
+  },
+  outbound: {
+    addMessage: "Please input the outbound name you want to add:",
+    deleteMessage:
+      'Be sure to <b>DELETE</b> the outbound "{outboundName}"? It is not reversible.'
   }
 };

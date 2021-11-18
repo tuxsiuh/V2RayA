@@ -5,10 +5,12 @@ import (
 	"github.com/v2rayA/v2rayA/common"
 	"github.com/v2rayA/v2rayA/core/v2ray"
 	"github.com/v2rayA/v2rayA/db/configure"
-	"github.com/v2rayA/v2rayA/extra/proxyWithHttp"
+	proxyWithHttp2 "github.com/v2rayA/v2rayA/pkg/util/proxyWithHttp"
+	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -17,7 +19,7 @@ func GetHttpClientWithProxy(proxyURL string) (client *http.Client, err error) {
 	if err != nil {
 		return
 	}
-	dialer, err := proxyWithHttp.FromURL(u, proxyWithHttp.Direct)
+	dialer, err := proxyWithHttp2.FromURL(u, proxyWithHttp2.Direct)
 	if err != nil {
 		return
 	}
@@ -31,7 +33,7 @@ func GetHttpClientWithProxy(proxyURL string) (client *http.Client, err error) {
 func GetHttpClientWithv2rayAProxy() (client *http.Client, err error) {
 	host := "127.0.0.1"
 	//是否在docker环境
-	if common.IsInDocker() {
+	if common.IsDocker() {
 		//连接网关，即宿主机的端口
 		out, err := exec.Command("sh", "-c", "ip route list default|head -n 1|awk '{print $3}'").Output()
 		if err == nil {
@@ -40,13 +42,13 @@ func GetHttpClientWithv2rayAProxy() (client *http.Client, err error) {
 			return nil, fmt.Errorf("failed to get gateway: %v", err)
 		}
 	}
-	return GetHttpClientWithProxy("socks5://" + host + ":20170")
+	return GetHttpClientWithProxy("socks5://" + net.JoinHostPort(host, strconv.Itoa(configure.GetPortsNotNil().Socks5)))
 }
 
 func GetHttpClientWithv2rayAPac() (client *http.Client, err error) {
 	host := "127.0.0.1"
 	//是否在docker环境
-	if common.IsInDocker() {
+	if common.IsDocker() {
 		//连接网关，即宿主机的端口
 		out, err := exec.Command("sh", "-c", "ip route|grep default|awk '{print $3}'").Output()
 		if err == nil {
@@ -55,11 +57,11 @@ func GetHttpClientWithv2rayAPac() (client *http.Client, err error) {
 			return nil, fmt.Errorf("failed to get gateway: %v", err)
 		}
 	}
-	return GetHttpClientWithProxy("http://" + host + ":20172")
+	return GetHttpClientWithProxy("http://" + net.JoinHostPort(host, strconv.Itoa(configure.GetPortsNotNil().HttpWithPac)))
 }
 
 func GetHttpClientAutomatically() (c *http.Client, err error) {
-	if s := configure.GetSettingNotNil(); !v2ray.IsV2RayRunning() || configure.GetConnectedServer() == nil || s.Transparent != configure.TransparentClose {
+	if s := configure.GetSettingNotNil(); !v2ray.ProcessManager.Running() || configure.GetConnectedServers() == nil || s.Transparent != configure.TransparentClose {
 		return http.DefaultClient, nil
 	}
 	setting := configure.GetSettingNotNil()

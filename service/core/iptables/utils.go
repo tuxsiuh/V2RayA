@@ -3,11 +3,10 @@ package iptables
 import (
 	"github.com/v2rayA/v2rayA/common"
 	"github.com/v2rayA/v2rayA/common/cmds"
-	"github.com/v2rayA/v2rayA/global"
+	"github.com/v2rayA/v2rayA/conf"
+	"golang.org/x/net/nettest"
 	"net"
-	"os"
 	"strconv"
-	"strings"
 )
 
 func IPNet2CIDR(ipnet *net.IPNet) string {
@@ -30,17 +29,17 @@ func GetLocalCIDR() ([]string, error) {
 }
 
 func IsIPv6Supported() bool {
-	if global.GetEnvironmentConfig().ForceIPV6On {
+	switch conf.GetEnvironmentConfig().IPV6Support {
+	case "on":
 		return true
+	case "off":
+		return false
+	default:
 	}
-	if common.IsInDocker(){
+	if common.IsDocker() {
 		return false
 	}
-	b, err := os.ReadFile("/proc/sys/net/ipv6/conf/default/disable_ipv6")
-	if err != nil {
-		return false
-	}
-	if strings.TrimSpace(string(b)) == "1" {
+	if !nettest.SupportsIPv6() {
 		return false
 	}
 	return cmds.IsCommandValid("ip6tables")

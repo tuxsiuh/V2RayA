@@ -2,9 +2,11 @@ package controller
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/v2rayA/routingA"
+	"github.com/v2rayA/RoutingA"
 	"github.com/v2rayA/v2rayA/common"
 	"github.com/v2rayA/v2rayA/db/configure"
+	"regexp"
+	"strings"
 )
 
 func GetRoutingA(ctx *gin.Context) {
@@ -18,10 +20,19 @@ func PutRoutingA(ctx *gin.Context) {
 	}
 	err := ctx.ShouldBindJSON(&data)
 	if err != nil {
-		common.ResponseError(ctx, logError(err, "bad request"))
+		common.ResponseError(ctx, logError("bad request"))
 		return
 	}
-	_, err = routingA.Parse(data.RoutingA)
+	// remove hardcode replacement and try parsing
+	lines := strings.Split(data.RoutingA, "\n")
+	hardcodeReplacement := regexp.MustCompile(`\$\$.+?\$\$`)
+	for i := range lines {
+		hardcodes := hardcodeReplacement.FindAllString(lines[i], -1)
+		for _, hardcode := range hardcodes {
+			lines[i] = strings.Replace(lines[i], hardcode, "", 1)
+		}
+	}
+	_, err = RoutingA.Parse(strings.Join(lines, "\n"))
 	if err != nil {
 		common.ResponseError(ctx, logError(err))
 		return

@@ -1,9 +1,13 @@
 package configure
 
-import "github.com/v2rayA/v2rayA/core/ipforward"
+import (
+	"github.com/v2rayA/v2rayA/common"
+	"github.com/v2rayA/v2rayA/core/ipforward"
+	"github.com/v2rayA/v2rayA/pkg/util/log"
+)
 
 type Setting struct {
-	PacMode                            PacMode         `json:"pacMode"`
+	RulePortMode                       RulePortMode    `json:"pacMode"`
 	ProxyModeWhenSubscribe             ProxyMode       `json:"proxyModeWhenSubscribe"`
 	GFWListAutoUpdateMode              AutoUpdateMode  `json:"pacAutoUpdateMode"`
 	GFWListAutoUpdateIntervalHour      int             `json:"pacAutoUpdateIntervalHour"`
@@ -13,28 +17,37 @@ type Setting struct {
 	MuxOn                              DefaultYesNo    `json:"muxOn"`
 	Mux                                int             `json:"mux"`
 	Transparent                        TransparentMode `json:"transparent"`
-	IntranetSharing                    bool            `json:"ipforward"`
-	EnhancedMode                       bool            `json:"enhancedMode"`
+	IpForward                          bool            `json:"ipforward"`
+	PortSharing                        bool            `json:"portSharing"`
+	SpecialMode                        SpecialMode     `json:"specialMode"`
+	TransparentType                    TransparentType `json:"transparentType"`
 	AntiPollution                      Antipollution   `json:"antipollution"`
-	DnsForceMode                       bool            `json:"dnsForceMode"`
 }
 
 func NewSetting() (setting *Setting) {
 	return &Setting{
-		PacMode:                    WhitelistMode,
-		ProxyModeWhenSubscribe:     ProxyModeDirect,
-		GFWListAutoUpdateMode:      NotAutoUpdate,
-		SubscriptionAutoUpdateMode: NotAutoUpdate,
-		TcpFastOpen:                Default,
-		MuxOn:                      No,
-		Mux:                        8,
-		Transparent:                TransparentClose,
-		IntranetSharing:            ipforward.IsIpForwardOn(),
-		EnhancedMode:               false,
-		AntiPollution:              AntipollutionClosed,
-		DnsForceMode:               false,
+		RulePortMode:                       WhitelistMode,
+		ProxyModeWhenSubscribe:             ProxyModeDirect,
+		GFWListAutoUpdateMode:              NotAutoUpdate,
+		GFWListAutoUpdateIntervalHour:      0,
+		SubscriptionAutoUpdateMode:         NotAutoUpdate,
+		SubscriptionAutoUpdateIntervalHour: 0,
+		TcpFastOpen:                        Default,
+		MuxOn:                              No,
+		Mux:                                8,
+		Transparent:                        TransparentClose,
+		IpForward:                          ipforward.IsIpForwardOn(),
+		PortSharing:                        false,
+		SpecialMode:                        SpecialModeNone,
+		TransparentType:                    TransparentRedirect,
+		AntiPollution:                      AntipollutionClosed,
 	}
+}
 
+func (s *Setting) FillEmpty() {
+	if err := common.FillEmpty(s, GetSettingNotNil()); err != nil {
+		log.Warn("FillEmpty: %v:", err)
+	}
 }
 
 type CustomPac struct {

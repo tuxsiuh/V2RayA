@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// Deprecated: use serverObj instead.
 type VmessInfo struct {
 	Ps            string `json:"ps"`
 	Add           string `json:"add"`
@@ -21,6 +22,7 @@ type VmessInfo struct {
 	Path          string `json:"path"`
 	TLS           string `json:"tls"`
 	Flow          string `json:"flow,omitempty"`
+	Alpn          string `json:"alpn,omitempty"` // VLESS only
 	V             string `json:"v"`
 	AllowInsecure bool   `json:"allowInsecure"`
 	Protocol      string `json:"protocol"`
@@ -47,10 +49,17 @@ func (v *VmessInfo) ExportToURL() string {
 		case "mkcp", "kcp":
 			setValue(&query, "headerType", v.Type)
 			setValue(&query, "seed", v.Path)
+		case "tcp":
+			setValue(&query, "headerType", v.Type)
+			setValue(&query, "host", v.Host)
+			setValue(&query, "path", v.Path)
+		case "grpc":
+			setValue(&query, "serviceName", v.Path)
 		}
-		//TODO: QUIC, gRPC
+		//TODO: QUIC
 		if v.TLS != "none" {
 			setValue(&query, "sni", v.Host) // FIXME: it may be different from ws's host
+			setValue(&query, "alpn", v.Alpn)
 		}
 		if v.TLS == "xtls" {
 			setValue(&query, "flow", v.Flow)
@@ -74,13 +83,11 @@ func (v *VmessInfo) ExportToURL() string {
 			Scheme:   "ss",
 			User:     url.User(base64.URLEncoding.EncodeToString([]byte(v.Net + ":" + v.ID))),
 			Host:     net.JoinHostPort(v.Add, v.Port),
-			Path:     "/",
-			RawQuery: "",
 			Fragment: v.Ps,
 		}
 		if v.Type != "" {
 			a := []string{
-				`obfs-local`,
+				`simple-obfs`,
 				`obfs=` + v.Type,
 				`obfs-host=` + v.Host,
 			}
@@ -123,7 +130,6 @@ func (v *VmessInfo) ExportToURL() string {
 			Scheme:   "trojan",
 			User:     url.User(v.ID),
 			Host:     net.JoinHostPort(v.Add, v.Port),
-			Path:     "/",
 			RawQuery: "",
 			Fragment: v.Ps,
 		}
@@ -147,6 +153,18 @@ func (v *VmessInfo) ExportToURL() string {
 			}
 		}
 		u.RawQuery = q.Encode()
+		return u.String()
+	case "http", "https":
+		var user *url.Userinfo
+		if v.ID != "" && v.Aid != "" {
+			user = url.UserPassword(v.ID, v.Aid)
+		}
+		u := &url.URL{
+			Scheme:   v.Protocol,
+			User:     user,
+			Host:     net.JoinHostPort(v.Add, v.Port),
+			Fragment: v.Ps,
+		}
 		return u.String()
 	}
 	return ""

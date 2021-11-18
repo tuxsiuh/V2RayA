@@ -1,5 +1,64 @@
 <template>
   <section id="node-section" class="node-section container hero">
+    <b-sidebar
+      v-show="connectedServerInfo.length"
+      :open="true"
+      class="node-status-sidebar-reduced"
+      :can-cancel="false"
+      @mouseenter.native="showSidebar = true"
+      @click.native="showSidebar = true"
+    >
+      <img src="/img/icons/switch-menu.svg" width="36px" />
+    </b-sidebar>
+    <b-sidebar
+      :open="showSidebar"
+      type="is-light"
+      :fullheight="false"
+      :fullwidth="false"
+      :overlay="false"
+      :right="false"
+      class="node-status-sidebar"
+      :can-cancel="['outside']"
+      @close="showSidebar = false"
+      @mouseleave.native="showSidebar = false"
+    >
+      <b-message
+        v-for="v of connectedServerInfo"
+        :key="v.value"
+        :title="
+          `${v.info.name}${
+            v.info.subscription_name ? ` [${v.info.subscription_name}]` : ''
+          }`
+        "
+        :closable="false"
+        size="is-small"
+        :type="
+          v.info.alive
+            ? v.selected
+              ? 'is-primary'
+              : 'is-success'
+            : v.info.alive === null
+            ? 'is-light'
+            : 'is-danger'
+        "
+        @click.native="handleClickConnectedServer(v.which)"
+      >
+        <div v-if="v.showContent">
+          <p>{{ $t("server.protocol") }}: {{ v.info.net }}</p>
+          <p v-if="v.info.delay && v.info.delay < 99999">
+            {{ $t("server.latency") }}: {{ v.info.delay }}ms
+          </p>
+          <p v-if="!v.info.alive && v.info.last_seen_time">
+            {{ $t("server.lastSeenTime") }}:
+            {{ v.info.last_seen_time | unix2datetime }}
+          </p>
+          <p v-if="v.info.last_try_time">
+            {{ $t("server.lastTryTime") }}:
+            {{ v.info.last_try_time | unix2datetime }}
+          </p>
+        </div>
+      </b-message>
+    </b-sidebar>
     <div v-if="ready" class="hero-body">
       <b-field
         id="toolbar"
@@ -12,6 +71,7 @@
               : 'rgba(0, 0, 0, 0.05)'
             : 'transparent'
         }"
+        :class="{ 'float-toolbar': overHeight }"
       >
         <div style="max-width: 60%">
           <button
@@ -61,13 +121,14 @@
               button: true,
               field: true,
               'is-delete': true,
+              'mobile-small': true,
               'not-show': true
             }"
           >
             <i class="iconfont icon-delete" />
             <span>placeholder</span>
           </button>
-          <span class="field not-show">placeholder</span>
+          <span class="field not-show mobile-small">placeholder</span>
         </div>
         <div class="right">
           <b-button
@@ -91,7 +152,7 @@
 
       <b-collapse
         v-if="!tableData.subscriptions.length && !tableData.servers.length"
-        class="card"
+        class="card welcome-driver"
         aria-id="contentIdForA11y3"
       >
         <div
@@ -123,20 +184,28 @@
           }}</a>
         </footer>
       </b-collapse>
-
       <b-tabs
         v-if="tableData.subscriptions.length || tableData.servers.length"
         v-model="tab"
         position="is-centered"
         type="is-toggle-rounded"
-        @change="handleTabsChange"
+        class="main-tabs"
+        @input="handleTabsChange"
       >
         <b-tab-item label="SUBSCRIPTION">
           <b-field :label="`SUBSCRIPTION(${tableData.subscriptions.length})`">
             <b-table
               :data="tableData.subscriptions"
               :checked-rows.sync="checkedRows"
-              :row-class="(row, index) => row.connected && 'is-connected'"
+              :row-class="
+                (row, index) =>
+                  row.connected &&
+                  runningState.running === $t('common.isRunning')
+                    ? 'is-connected-running'
+                    : row.connected
+                    ? 'is-connected-not-running'
+                    : null
+              "
               default-sort="id"
               checkable
             >
@@ -225,18 +294,25 @@
         <b-tab-item
           label="SERVER"
           :icon="
-            `${connectedServer._type === 'server' ? ' iconfont icon-dian' : ''}`
+            `${connectedServerInTab['server'] ? ' iconfont icon-dian' : ''}`
           "
         >
           <b-field :label="`SERVER(${tableData.servers.length})`">
             <b-table
-              :paginated="tableData.servers.length > 150"
               per-page="100"
               :current-page.sync="currentPage.servers"
               :data="tableData.servers"
               :checked-rows.sync="checkedRows"
               checkable
-              :row-class="(row, index) => row.connected && 'is-connected'"
+              :row-class="
+                (row, index) =>
+                  row.connected &&
+                  runningState.running === $t('common.isRunning')
+                    ? 'is-connected-running'
+                    : row.connected
+                    ? 'is-connected-not-running'
+                    : null
+              "
               default-sort="id"
             >
               <b-table-column
@@ -302,7 +378,11 @@
                     @click="handleClickAboutConnection(props.row)"
                   >
                     {{
-                      props.row.connected
+                      loadBalanceValid
+                        ? props.row.connected
+                          ? $t("operations.cancel")
+                          : $t("operations.select")
+                        : props.row.connected
                         ? $t("operations.disconnect")
                         : $t("operations.connect")
                     }}
@@ -338,8 +418,7 @@
           "
           :icon="
             `${
-              connectedServer._type === 'subscriptionServer' &&
-              connectedServer.sub === subi
+              connectedServerInTab['subscriptionServer'][subi]
                 ? ' iconfont icon-dian'
                 : ''
             }`
@@ -354,13 +433,20 @@
             "
           >
             <b-table
-              :paginated="sub.servers.length >= 150"
               :current-page.sync="currentPage[sub.id]"
               per-page="100"
               :data="sub.servers"
               :checked-rows.sync="checkedRows"
               checkable
-              :row-class="(row, index) => row.connected && 'is-connected'"
+              :row-class="
+                (row, index) =>
+                  row.connected &&
+                  runningState.running === $t('common.isRunning')
+                    ? 'is-connected-running'
+                    : row.connected
+                    ? 'is-connected-not-running'
+                    : null
+              "
               default-sort="id"
             >
               <b-table-column
@@ -427,7 +513,11 @@
                     @click="handleClickAboutConnection(props.row, subi)"
                   >
                     {{
-                      props.row.connected
+                      loadBalanceValid
+                        ? props.row.connected
+                          ? $t("operations.cancel")
+                          : $t("operations.select")
+                        : props.row.connected
                         ? $t("operations.disconnect")
                         : $t("operations.connect")
                     }}
@@ -514,20 +604,80 @@
             @keyup.native="handleImportEnter"
           ></b-input>
         </section>
-        <footer
-          class="modal-card-foot"
-          style="display:flex;justify-content:flex-end"
-        >
-          <button class="button" type="button" @click="showModalImport = false">
-            {{ $t("operations.cancel") }}
-          </button>
+        <footer class="modal-card-foot">
           <button
-            class="button is-primary"
+            class="button is-link is-light"
             type="button"
-            @click="handleClickImportConfirm"
+            @click="handleClickImportInBatch"
           >
-            {{ $t("operations.confirm") }}
+            {{ $t("operations.inBatch") }}
           </button>
+          <div
+            style="display:flex;justify-content:flex-end;width: -moz-available;"
+          >
+            <button
+              class="button"
+              type="button"
+              @click="showModalImport = false"
+            >
+              {{ $t("operations.cancel") }}
+            </button>
+            <button
+              class="button is-primary"
+              type="button"
+              @click="handleClickImportConfirm"
+            >
+              {{ $t("operations.confirm") }}
+            </button>
+          </div>
+        </footer>
+      </div>
+    </b-modal>
+    <b-modal
+      :active.sync="showModalImportInBatch"
+      has-modal-card
+      trap-focus
+      aria-role="dialog"
+      aria-modal
+      @close="showModalImport = false"
+    >
+      <div class="modal-card" style="width: 350px">
+        <header class="modal-card-head">
+          <p class="modal-card-title">{{ $t("operations.import") }}</p>
+        </header>
+        <section class="modal-card-body">
+          {{ $t("import.batchMessage") }}
+          <b-input
+            ref="importInput"
+            v-model="importWhat"
+            type="textarea"
+            custom-class="horizon-scroll"
+          ></b-input>
+        </section>
+        <footer class="modal-card-foot">
+          <div
+            style="display:flex;justify-content:flex-end;width: -moz-available;"
+          >
+            <button
+              class="button"
+              type="button"
+              @click="
+                () => {
+                  showModalImport = false;
+                  showModalImportInBatch = false;
+                }
+              "
+            >
+              {{ $t("operations.cancel") }}
+            </button>
+            <button
+              class="button is-primary"
+              type="button"
+              @click="handleClickImportConfirm"
+            >
+              {{ $t("operations.confirm") }}
+            </button>
+          </div>
         </footer>
       </div>
     </b-modal>
@@ -535,33 +685,57 @@
 </template>
 
 <script>
-import {
-  locateServer,
-  handleResponse,
-  isVersionGreaterEqual
-} from "@/assets/js/utils";
+import { locateServer, handleResponse } from "@/assets/js/utils";
 import CONST from "@/assets/js/const";
 import QRCode from "qrcode";
 import jsqrcode from "./assets/js/jsqrcode";
 import ClipboardJS from "clipboard";
 import { Base64 } from "js-base64";
 import ModalServer from "@/components/modalServer";
-import ModalSubscription from "@/components/modalSuscription";
+import ModalSubscription from "@/components/modalSubcription";
 import { waitingConnected } from "@/assets/js/networkInspect";
 import axios from "@/plugins/axios";
+import * as dayjs from "dayjs";
 
 export default {
   name: "Node",
   components: { ModalSubscription, ModalServer },
+  filters: {
+    unix2datetime(x) {
+      x = dayjs.unix(x);
+      let now = dayjs();
+      if (localStorage["_lang"] === "zh") {
+        now = now.locale("zh-cn");
+      } else if (localStorage["_lang"] === "en") {
+        now = now.locale("en");
+      }
+      return now.to(x);
+    }
+  },
+  props: {
+    outbound: {
+      type: String,
+      default: "proxy"
+    },
+    observatory: {
+      type: Object,
+      default() {
+        return null;
+      }
+    }
+  },
   data() {
     return {
+      enterReducedSidebar: false,
+      showSidebar: false,
       importWhat: "",
       showModalImport: false,
+      showModalImportInBatch: false,
       currentPage: { servers: 1, subscriptions: 1 },
       tableData: {
         servers: [],
         subscriptions: [],
-        connectedServer: {}
+        connectedServer: []
       },
       checkedRows: [],
       ready: false,
@@ -569,41 +743,78 @@ export default {
       runningState: {
         running: this.$t("common.checkRunning"),
         connectedServer: null,
-        lastConnectedServer: null
+        outboundToServerName: {}
       },
       showModalServer: false,
       which: null,
       modalServerReadOnly: false,
       showModalSubscription: false,
-      connectedServer: {
-        _type: "",
-        id: 0,
-        sub: 0
+      connectedServerInTab: {
+        subscriptionServer: Array(100),
+        server: false
       },
+      connectedServerInfo: [],
       overHeight: false,
       clipboard: null
     };
   },
+  computed: {
+    loadBalanceValid() {
+      return localStorage["loadBalanceValid"] === "true";
+    }
+  },
   watch: {
     "runningState.running"() {
-      let val = this.runningState;
-      this.updateConnectView(val);
-      this.$emit("input", this.runningState);
+      this.updateConnectView();
+    },
+    outbound() {
+      this.updateConnectView();
+    },
+    tableData(x) {
+      for (const sub of x.subscriptions) {
+        sub.status = dayjs(sub.status)
+          .tz(dayjs.tz.guess())
+          .format("YYYY-MM-DD HH:mm:ss");
+      }
+    },
+    observatory(val) {
+      for (const info of val.body) {
+        this.connectedServerInfo.some(x => {
+          if (
+            info.which._type === x.which._type &&
+            info.which.id === x.which.id &&
+            info.which.sub === x.which.sub
+          ) {
+            for (const k in info) {
+              if (k === "which" || !info.hasOwnProperty(k)) {
+                continue;
+              }
+              x.info[k] = info[k];
+            }
+            return true;
+          }
+          return false;
+        });
+      }
+      let minDelay = 99999;
+      let index = -1;
+      this.connectedServerInfo.forEach((x, i) => {
+        x.selected = false;
+        if (x.info.delay && x.info.delay < minDelay) {
+          minDelay = x.info.delay;
+          index = i;
+        }
+      });
+      if (index >= 0) {
+        this.connectedServerInfo[index].selected = true;
+      }
     }
   },
   created() {
     this.$axios({
       url: apiRoot + "/touch"
     }).then(res => {
-      this.tableData = res.data.data.touch;
-      // this.$store.commit("CONNECTED_SERVER", this.tableData.connectedServer);
-      this.runningState = {
-        running: res.data.data.running
-          ? this.$t("common.isRunning")
-          : this.$t("common.notRunning"),
-        connectedServer: this.tableData.connectedServer,
-        lastConnectedServer: null
-      };
+      this.refreshTableData(res.data.data.touch, res.data.data.running);
       this.locateTabToConnected();
       this.ready = true;
     });
@@ -644,6 +855,88 @@ export default {
     });
   },
   methods: {
+    refreshTableData(touch, running) {
+      touch.servers.forEach(v => {
+        v.connected = false;
+      });
+      touch.subscriptions.forEach(s => {
+        s.servers.forEach(v => {
+          v.connected = false;
+        });
+      });
+      this.tableData = touch;
+      if (running !== undefined) {
+        Object.assign(this.runningState, {
+          running: running
+            ? this.$t("common.isRunning")
+            : this.$t("common.notRunning"),
+          connectedServer: touch.connectedServer
+        });
+      }
+    },
+    handleClickConnectedServer(which) {
+      const that = this;
+      this.locateTabToConnected(which);
+      let tabIndex = -1;
+      if (which._type === "server") {
+        tabIndex = 1;
+      } else {
+        tabIndex = 2 + which.sub;
+      }
+
+      let tryCnt = 0;
+      const maxTry = 5;
+      const tryInterval = 500;
+      function waitingAndLocate() {
+        let nodes = document.querySelectorAll(".main-tabs .tabs li");
+        if (!nodes[tabIndex].classList.contains("is-active")) {
+          tryCnt++;
+          if (tryCnt > maxTry) {
+            return;
+          }
+          setTimeout(waitingAndLocate, tryInterval);
+          return;
+        }
+        console.log("ok");
+        that.$nextTick(() => {
+          let nodes = document.querySelectorAll(".main-tabs .b-table");
+          if (which._type === "subscriptionServer") {
+            // solid
+            tabIndex = 2;
+          }
+          nodes = nodes[tabIndex].querySelectorAll("table > tbody > tr");
+          const node = Array.from(nodes).find(
+            node =>
+              parseInt(
+                node.querySelector('td[data-label="ID"]')?.textContent
+              ) === which.id
+          );
+          if (!node) {
+            console.warn("node not found");
+            return;
+          }
+          node.scrollIntoView({ block: "end", inline: "center" });
+          let highlightClass = "highlight-row-connected";
+          if (that.runningState.running !== that.$t("common.isRunning")) {
+            highlightClass = "highlight-row-disconnected";
+          }
+          node.classList.add(highlightClass);
+          setTimeout(() => {
+            node.classList.remove(highlightClass);
+            setTimeout(() => {
+              node.classList.add(highlightClass);
+              setTimeout(() => {
+                node.classList.remove(highlightClass);
+              }, 200);
+            }, 50);
+          }, 200);
+        });
+      }
+      waitingAndLocate();
+    },
+    handleClickImportInBatch() {
+      this.showModalImportInBatch = true;
+    },
     handleModalImportShow() {
       this.$refs.importInput.focus();
     },
@@ -715,49 +1008,122 @@ export default {
         return parseInt(a.pingLatency) > parseInt(b.pingLatency) ? 1 : -1;
       }
     },
-    updateConnectView(runningState) {
-      if (!runningState) {
-        runningState = this.runningState;
+    filterConnectedServer(servers, outbound = this.outbound) {
+      const connectedServers = [];
+      if (servers instanceof Array) {
+        for (let s of servers) {
+          if (s.outbound === outbound) {
+            connectedServers.push(s);
+          }
+        }
+        return connectedServers.length ? connectedServers : null;
       }
-      if (runningState.lastConnectedServer) {
-        let server = locateServer(
-          this.tableData,
-          runningState.lastConnectedServer
-        );
-        if (server.connected) {
-          server.connected = false;
+      return servers;
+    },
+    updateConnectView() {
+      let connectedServer = this.runningState.connectedServer;
+      // associate outbounds and servers
+      this.runningState.outboundToServerName = {};
+      this.runningState.connectedServer?.forEach(cs => {
+        const server = locateServer(this.tableData, cs);
+        if (
+          this.runningState.outboundToServerName[cs.outbound] &&
+          typeof this.runningState.outboundToServerName[cs.outbound] !==
+            "number"
+        ) {
+          this.runningState.outboundToServerName[cs.outbound] = 1;
+        }
+        if (
+          typeof this.runningState.outboundToServerName[cs.outbound] ===
+          "number"
+        ) {
+          this.runningState.outboundToServerName[cs.outbound]++;
         } else {
-          //否则广播
-          this.tableData.servers.some(v => {
-            v.connected && (v = false);
-            return v.connected;
-          }) ||
-            this.tableData.subscriptions.some(s => {
-              return s.servers.some(v => {
-                v.connected && (v = false);
-                return v.connected;
-              });
-            });
+          this.runningState.outboundToServerName[cs.outbound] = server.name;
+        }
+      });
+
+      connectedServer = this.filterConnectedServer(connectedServer);
+      // clear connected state
+      this.tableData.servers.forEach(v => {
+        v.connected && (v.connected = false);
+      });
+      this.tableData.subscriptions.forEach(s => {
+        s.servers.forEach(v => {
+          v.connected && (v.connected = false);
+        });
+      });
+      if (connectedServer) {
+        let server = locateServer(this.tableData, connectedServer);
+        if (server instanceof Array) {
+          for (const s of server) {
+            s.connected = true;
+          }
+        } else {
+          server.connected = true;
+          server = [server];
+        }
+        this.connectedServerInfo = [];
+        for (const i in server) {
+          let subscription_name = null;
+          if (connectedServer[i]._type === "subscriptionServer") {
+            subscription_name = this.tableData.subscriptions[
+              connectedServer[i].sub
+            ].host.toUpperCase();
+          }
+          this.connectedServerInfo.push({
+            info: {
+              ...server[i],
+              subscription_name,
+              alive: null,
+              delay: null,
+              outbound_tag: null,
+              last_seen_time: null,
+              last_error_reason: null,
+              last_try_time: null
+            },
+            which: connectedServer[i],
+            showContent: true,
+            selected: false
+          });
+        }
+      } else {
+        this.connectedServerInfo = [];
+      }
+
+      this.connectedServerInTab.server = false;
+      for (const i in this.connectedServerInTab.subscriptionServer) {
+        this.connectedServerInTab.subscriptionServer[i] = false;
+      }
+      if (connectedServer) {
+        let servers = connectedServer;
+        if (!(connectedServer instanceof Array)) {
+          servers = [connectedServer];
+        }
+        for (const s of servers) {
+          if (s._type === "server") {
+            this.connectedServerInTab.server = true;
+          } else if (s._type === "subscriptionServer") {
+            this.connectedServerInTab.subscriptionServer[s.sub] = true;
+          }
         }
       }
-      if (runningState.connectedServer) {
-        let server = locateServer(this.tableData, runningState.connectedServer);
-        server.connected = true;
-      }
-      this.connectedServer = Object.assign(
-        this.connectedServer,
-        runningState.connectedServer
-      );
-      if (!runningState.connectedServer) {
-        this.connectedServer._type = "";
-      }
+      this.$emit("input", this.runningState);
     },
-    locateTabToConnected(whichServer) {
+    locateTabToConnected(which) {
+      let whichServer = which;
       if (!whichServer) {
-        whichServer = this.tableData.connectedServer;
+        whichServer = this.runningState.connectedServer;
       }
       if (!whichServer) {
         return;
+      }
+      whichServer = this.filterConnectedServer(whichServer);
+      if (!whichServer) {
+        return;
+      }
+      if (whichServer instanceof Array) {
+        whichServer = whichServer[0];
       }
       let sub = whichServer.sub;
       let subscriptionServersOffset = 2;
@@ -793,14 +1159,7 @@ export default {
         }
       }).then(res => {
         if (res.data.code === "SUCCESS") {
-          this.tableData = res.data.data.touch;
-          this.runningState = {
-            running: res.data.data.running
-              ? this.$t("common.isRunning")
-              : this.$t("common.notRunning"),
-            connectedServer: this.tableData.connectedServer,
-            lastConnectedServer: null
-          };
+          this.refreshTableData(res.data.data.touch, res.data.data.running);
           this.updateConnectView();
           this.$buefy.toast.open({
             message: this.$t("common.success"),
@@ -809,12 +1168,41 @@ export default {
             queue: false
           });
           this.showModalImport = false;
+          this.showModalImportInBatch = false;
           this.importWhat = "";
         } else {
           this.$buefy.toast.open({
             message: res.data.message,
             type: "is-warning",
             position: "is-top",
+            queue: false
+          });
+        }
+      });
+    },
+    deleteSelectedServers() {
+      this.$axios({
+        url: apiRoot + "/touch",
+        method: "delete",
+        data: {
+          touches: this.checkedRows.map(x => {
+            return {
+              id: x.id,
+              _type: x._type
+            };
+          })
+        }
+      }).then(res => {
+        if (res.data.code === "SUCCESS") {
+          this.refreshTableData(res.data.data.touch, res.data.data.running);
+          this.checkedRows = [];
+          this.updateConnectView();
+        } else {
+          this.$buefy.toast.open({
+            message: res.data.message,
+            type: "is-warning",
+            position: "is-top",
+            duration: 5000,
             queue: false
           });
         }
@@ -829,44 +1217,10 @@ export default {
         type: "is-danger",
         hasIcon: true,
         icon: " iconfont icon-alert",
-        onConfirm: () =>
-          this.$axios({
-            url: apiRoot + "/touch",
-            method: "delete",
-            data: {
-              touches: this.checkedRows.map(x => {
-                return {
-                  id: x.id,
-                  _type: x._type
-                };
-              })
-            }
-          }).then(res => {
-            if (res.data.code === "SUCCESS") {
-              this.tableData = res.data.data.touch;
-              this.checkedRows = [];
-              Object.assign(this.runningState, {
-                running: res.data.data.running
-                  ? this.$t("common.isRunning")
-                  : this.$t("common.notRunning"),
-                connectedServer: this.tableData.connectedServer,
-                lastConnectedServer: null
-              });
-              this.updateConnectView();
-            } else {
-              this.$buefy.toast.open({
-                message: res.data.message,
-                type: "is-warning",
-                position: "is-top",
-                duration: 5000,
-                queue: false
-              });
-            }
-          })
+        onConfirm: () => this.deleteSelectedServers()
       });
     },
     handleClickAboutConnection(row, sub) {
-      const that = this;
       let cancel;
       if (!row.connected) {
         //该节点并未处于连接状态，因此进行连接
@@ -874,18 +1228,26 @@ export default {
           this.$axios({
             url: apiRoot + "/connection",
             method: "post",
-            data: { id: row.id, _type: row._type, sub: sub },
+            data: {
+              id: row.id,
+              _type: row._type,
+              sub: sub,
+              outbound: this.outbound
+            },
             cancelToken: new axios.CancelToken(function executor(c) {
               cancel = c;
             })
           }).then(res => {
             if (res.data.code === "SUCCESS") {
               Object.assign(this.runningState, {
-                running: this.$t("common.isRunning"),
-                connectedServer: res.data.data.connectedServer,
-                lastConnectedServer: res.data.data.lastConnectedServer
+                running: res.data.data.running
+                  ? this.$t("common.isRunning")
+                  : this.$t("common.notRunning"),
+                connectedServer: res.data.data.touch.connectedServer
               });
-              this.updateConnectView();
+              this.$nextTick(() => {
+                this.updateConnectView();
+              });
             } else {
               this.$buefy.toast.open({
                 message: res.data.message,
@@ -894,6 +1256,7 @@ export default {
                 duration: 5000,
                 queue: false
               });
+              this.deleteSelectedServers();
             }
           }),
           3 * 1000,
@@ -902,14 +1265,21 @@ export default {
       } else {
         this.$axios({
           url: apiRoot + "/connection",
-          method: "delete"
+          method: "delete",
+          data: {
+            id: row.id,
+            _type: row._type,
+            sub: sub,
+            outbound: this.outbound
+          }
         }).then(res => {
           if (res.data.code === "SUCCESS") {
             row.connected = false;
             Object.assign(this.runningState, {
-              running: that.$t("common.notRunning"),
-              connectedServer: null,
-              lastConnectedServer: res.data.data.lastConnectedServer
+              running: res.data.data.running
+                ? this.$t("common.isRunning")
+                : this.$t("common.notRunning"),
+              connectedServer: res.data.data.touch.connectedServer
             });
             this.updateConnectView();
           } else {
@@ -1108,14 +1478,7 @@ export default {
         }
       }).then(res => {
         handleResponse(res, this, () => {
-          this.tableData = res.data.data.touch;
-          this.runningState = {
-            running: res.data.data.running
-              ? this.$t("common.isRunning")
-              : this.$t("common.notRunning"),
-            connectedServer: this.tableData.connectedServer,
-            lastConnectedServer: null
-          };
+          this.refreshTableData(res.data.data.touch, res.data.data.running);
           this.updateConnectView();
           this.$buefy.toast.open({
             message: this.$t("common.success"),
@@ -1162,36 +1525,12 @@ export default {
             queue: false
           });
           this.showModalServer = false;
-          this.tableData = res.data.data.touch;
-          this.runningState = {
-            running: res.data.data.running
-              ? this.$t("common.isRunning")
-              : this.$t("common.notRunning"),
-            connectedServer: this.tableData.connectedServer,
-            lastConnectedServer: null
-          };
+          this.refreshTableData(res.data.data.touch, res.data.data.running);
           this.updateConnectView();
         });
       });
     },
     handleClickModifySubscription(row) {
-      if (!isVersionGreaterEqual(localStorage["version"], "0.5.0")) {
-        this.$buefy.snackbar.open({
-          message: this.$t("version.higherVersionNeeded"),
-          type: "is-warning",
-          queue: false,
-          position: "is-top",
-          duration: 3000,
-          actionText: this.$t("operations.helpManual"),
-          onAction: () => {
-            window.open(
-              "https://github.com/v2rayA/v2rayA#%E4%BD%BF%E7%94%A8",
-              "_blank"
-            );
-          }
-        });
-        return;
-      }
       this.which = Object.assign({}, row);
       this.which.servers = [];
       this.showModalSubscription = true;
@@ -1213,14 +1552,7 @@ export default {
             queue: false
           });
           this.showModalSubscription = false;
-          this.tableData = res.data.data.touch;
-          this.runningState = {
-            running: res.data.data.running
-              ? this.$t("common.isRunning")
-              : this.$t("common.notRunning"),
-            connectedServer: this.tableData.connectedServer,
-            lastConnectedServer: null
-          };
+          this.refreshTableData(res.data.data.touch, res.data.data.running);
           this.updateConnectView();
         });
       });
@@ -1262,14 +1594,21 @@ td {
 @import "~bulma/sass/utilities/all";
 
 #toolbar {
-  .field.is-grouped .field:not(:last-child) {
-    @media screen and (max-width: 450px) {
+  @media screen and (max-width: 450px) {
+    &.float-toolbar {
+      top: 4.25rem;
+      margin-left: 25px;
+      width: calc(100% - 50px);
+    }
+    .field.is-grouped .field:not(:last-child) {
       margin-right: 0.3rem;
     }
   }
+
   .field.is-grouped.is-grouped-multiline:last-child {
     margin-bottom: 0;
   }
+
   padding: 0.75em 0.75em;
   margin-bottom: 1rem;
   position: sticky;
@@ -1314,9 +1653,13 @@ td {
   }
 }
 
-tr.is-connected {
-  //$c: #23d160;
+tr.is-connected-running {
   $c: #bbdefb;
+  background: $c;
+  color: findColorInvert($c);
+}
+tr.is-connected-not-running {
+  $c: rgba(255, 69, 58, 0.4);
   background: $c;
   color: findColorInvert($c);
 }
@@ -1391,10 +1734,58 @@ $coverBackground: rgba(0, 0, 0, 0.6);
   font-size: 12px;
   pointer-events: none;
 }
+
 .mobile-small {
   @media screen and (max-width: 450px) {
     border-radius: 2px;
-    font-size: 0.75rem;
+    font-size: 0.65rem;
   }
+}
+.b-sidebar.node-status-sidebar-reduced > .sidebar-content.is-fixed {
+  z-index: 1;
+  left: 1px;
+  top: 4.25rem;
+  background-color: white;
+  width: unset;
+  line-height: 0;
+  border-radius: 4px;
+}
+.b-sidebar.node-status-sidebar > .sidebar-content.is-fixed {
+  left: 1px;
+  top: 4.25rem;
+  background-color: white;
+  max-height: calc(100vh - 5rem);
+  overflow-y: auto;
+  .message {
+    cursor: pointer;
+  }
+  .tabs:not(:last-child),
+  .pagination:not(:last-child),
+  .message:not(:last-child),
+  .level:not(:last-child),
+  .breadcrumb:not(:last-child),
+  .highlight:not(:last-child),
+  .block:not(:last-child),
+  .title:not(:last-child),
+  .subtitle:not(:last-child),
+  .table-container:not(:last-child),
+  .table:not(:last-child),
+  .progress:not(:last-child),
+  .notification:not(:last-child),
+  .content:not(:last-child),
+  .box:not(:last-child) {
+    margin-bottom: 0.25rem;
+  }
+}
+tr.highlight-row-connected {
+  transition: background-color 0.05s linear;
+  background-color: #a8cff0;
+}
+tr.highlight-row-disconnected {
+  transition: background-color 0.05s linear;
+  background-color: rgba(255, 69, 58, 0.55);
+}
+.click-through {
+  pointer-events: none;
 }
 </style>

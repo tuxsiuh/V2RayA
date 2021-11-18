@@ -3,22 +3,27 @@ package configure
 type (
 	AutoUpdateMode          string
 	ProxyMode               string
-	PacMode                 string
+	RulePortMode            string
 	PacRuleType             string
 	PacMatchType            string
 	RoutingDefaultProxyMode string
 	TouchType               string
 	DefaultYesNo            string
 	TransparentMode         string
+	TransparentType         string
 	Antipollution           string
+	SpecialMode             string
 )
 
 const (
-	TransparentClose     = TransparentMode("close")
-	TransparentProxy     = TransparentMode("proxy")
-	TransparentWhitelist = TransparentMode("whitelist")
-	TransparentGfwlist   = TransparentMode("gfwlist")
-	TransparentPac       = TransparentMode("pac")
+	TransparentClose      = TransparentMode("close")
+	TransparentProxy      = TransparentMode("proxy") // proxy all traffic
+	TransparentWhitelist  = TransparentMode("whitelist")
+	TransparentGfwlist    = TransparentMode("gfwlist")
+	TransparentFollowRule = TransparentMode("pac")
+
+	TransparentTproxy   = TransparentType("tproxy")
+	TransparentRedirect = TransparentType("redirect")
 
 	Default = DefaultYesNo("default")
 	Yes     = DefaultYesNo("yes")
@@ -32,10 +37,10 @@ const (
 	ProxyModePac    = ProxyMode("pac")
 	ProxyModeProxy  = ProxyMode("proxy")
 
-	WhitelistMode = PacMode("whitelist")
-	GfwlistMode   = PacMode("gfwlist")
-	CustomMode    = PacMode("custom")
-	RoutingAMode  = PacMode("routingA")
+	WhitelistMode = RulePortMode("whitelist")
+	GfwlistMode   = RulePortMode("gfwlist")
+	CustomMode    = RulePortMode("custom")
+	RoutingAMode  = RulePortMode("routingA")
 
 	DirectRule = PacRuleType("direct")
 	ProxyRule  = PacRuleType("proxy")
@@ -52,18 +57,26 @@ const (
 	ServerType             = TouchType("server")
 	SubscriptionServerType = TouchType("subscriptionServer")
 
-	DnsForward          = Antipollution("dnsforward")
-	DoH                 = Antipollution("doh")
-	AntipollutionNone   = Antipollution("none")   //历史原因，none代表“仅防止dns劫持”，不代表关闭
-	AntipollutionClosed = Antipollution("closed") //直接iptables略过udp
+	AntipollutionDnsForward = Antipollution("dnsforward")
+	AntipollutionDoH        = Antipollution("doh")
+	AntipollutionAntiHijack = Antipollution("none") // 历史原因，none代表“仅防止dns劫持”，不代表关闭
+	AntipollutionClosed     = Antipollution("closed")
+	AntipollutionAdvanced   = Antipollution("advanced") // 自定义
+
+	SpecialModeNone       = SpecialMode("none")
+	SpecialModeSupervisor = SpecialMode("supervisor")
+	SpecialModeFakeDns    = SpecialMode("fakedns")
 )
 
 const (
 	RoutingATemplate = `default: proxy
-
 # write your own rules below
-domain(domain:webofscience.com,domain:webofknowledge.com,domain:clarivate.com,domain:ieee.org,domain:mdpi.com,domain:qq.com)->direct
+domain(domain:mail.qq.com)->direct
 
-ip(geoip:private, geoip:cn)->direct
-domain(geosite:cn)->direct`
+domain(geosite:geolocation-!cn)->proxy
+domain(geosite:google-scholar)->proxy
+domain(geosite:category-scholar-!cn, geosite:category-scholar-cn)->direct
+domain(geosite:cn)->direct
+ip(geoip:hk,geoip:mo)->proxy
+ip(geoip:private, geoip:cn)->direct`
 )

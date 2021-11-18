@@ -31,8 +31,6 @@ func (r *redirect) RemoveIPWhitelist(cidr string) {
 func (r *redirect) GetSetupCommands() SetupCommands {
 	commands := `
 iptables -w 2 -t nat -N V2RAY
-# 出方向白名单端口
-iptables -w 2 -t nat -A V2RAY -p tcp -m multiport --sports {{TCP_PORTS}} -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 0.0.0.0/32 -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 10.0.0.0/8 -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 100.64.0.0/10 -j RETURN
@@ -43,14 +41,12 @@ iptables -w 2 -t nat -A V2RAY -d 192.0.0.0/24 -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 192.0.2.0/24 -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 192.88.99.0/24 -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 192.168.0.0/16 -j RETURN
-# fakedns
-# iptables -w 2 -t nat -A V2RAY -d 198.18.0.0/15 -j RETURN
+iptables -w 2 -t nat -A V2RAY -d 198.18.0.0/15 -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 198.51.100.0/24 -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 203.0.113.0/24 -j RETURN
 iptables -w 2 -t nat -A V2RAY -d 224.0.0.0/4 -j RETURN
-# dnsPoison
-# iptables -w 2 -t nat -A V2RAY -d 240.0.0.0/4 -j RETURN
-iptables -w 2 -t nat -A V2RAY -m mark --mark 0xff -j RETURN
+iptables -w 2 -t nat -A V2RAY -d 240.0.0.0/4 -j RETURN
+iptables -w 2 -t nat -A V2RAY -m mark --mark 0x80/0x80 -j RETURN
 iptables -w 2 -t nat -A V2RAY -p tcp -j REDIRECT --to-ports 32345
 
 iptables -w 2 -t nat -I PREROUTING -p tcp -j V2RAY
@@ -59,12 +55,8 @@ iptables -w 2 -t nat -I OUTPUT -p tcp -j V2RAY
 	if IsIPv6Supported() {
 		commands += `
 ip6tables -t nat -N V2RAY
-# 出方向白名单端口
-ip6tables -w 2 -t nat -A V2RAY -p tcp -m multiport --sports {{TCP_PORTS}} -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -d ::/128 -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -d ::1/128 -j RETURN
-ip6tables -w 2 -t nat -A V2RAY -d ::ffff:0:0/96 -j RETURN
-ip6tables -w 2 -t nat -A V2RAY -d ::ffff:0:0:0/96 -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -d 64:ff9b::/96 -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -d 100::/64 -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -d 2001::/32 -j RETURN
@@ -74,7 +66,7 @@ ip6tables -w 2 -t nat -A V2RAY -d 2002::/16 -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -d fc00::/7 -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -d fe80::/10 -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -d ff00::/8 -j RETURN
-ip6tables -w 2 -t nat -A V2RAY -m mark --mark 0xff -j RETURN
+ip6tables -w 2 -t nat -A V2RAY -m mark --mark 0x80/0x80 -j RETURN
 ip6tables -w 2 -t nat -A V2RAY -p tcp -j REDIRECT --to-ports 32345
 
 ip6tables -w 2 -t nat -I PREROUTING -p tcp -j V2RAY

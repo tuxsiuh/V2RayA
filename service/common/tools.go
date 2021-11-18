@@ -1,11 +1,18 @@
 package common
 
 import (
-	"github.com/mzz2017/go-engine/src/common"
+	"fmt"
 	"net/url"
 	"os"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
+)
+
+var (
+	NotSameTypeErr    = fmt.Errorf("cannot fill empty: the two value have different type")
+	NeedPassInPointer = fmt.Errorf("the structure passed in should be a pointer")
 )
 
 func Max(a, b int) int {
@@ -48,6 +55,28 @@ func VersionMustGreaterEqual(v1, v2 string) (is bool) {
 	return
 }
 
+func Deduplicate(list []string) []string {
+	res := make([]string, 0, len(list))
+	m := make(map[string]struct{})
+	for _, v := range list {
+		if _, ok := m[v]; ok {
+			continue
+		}
+		m[v] = struct{}{}
+		res = append(res, v)
+	}
+	return res
+}
+
+func PrefixListSatisfyString(prefixList []string, str string) int {
+	for i, v := range prefixList {
+		if strings.HasPrefix(str, v) {
+			return i
+		}
+	}
+	return -1
+}
+
 /* return if v1 is after v2 */
 func VersionGreaterEqual(v1, v2 string) (is bool, err error) {
 	if v1 == "UnknownClient" {
@@ -57,10 +86,10 @@ func VersionGreaterEqual(v1, v2 string) (is bool, err error) {
 		return false, nil
 	}
 	var HighPriority = []string{"debug", "unstable"}
-	if common.ArrayContainString(HighPriority, v1) {
+	if PrefixListSatisfyString(HighPriority, v1) != -1 {
 		return true, nil
 	}
-	if common.ArrayContainString(HighPriority, v2) {
+	if PrefixListSatisfyString(HighPriority, v2) != -1 {
 		return false, nil
 	}
 	v1 = strings.TrimPrefix(v1, "v")
@@ -89,9 +118,10 @@ func VersionGreaterEqual(v1, v2 string) (is bool, err error) {
 	return len(a1) >= len(a2), nil
 }
 
-func IsInDocker() bool {
+// IsDocker return true only if the environment SHOULD be docker
+func IsDocker() bool {
 	_, err := os.Stat("/.dockerenv")
-	return !os.IsNotExist(err)
+	return err == nil
 }
 
 // UrlEncoded encodes a string like Javascript's encodeURIComponent()
@@ -112,4 +142,82 @@ func TrimLineContains(parent, sub string) string {
 		}
 	}
 	return strings.Join(result, "\n")
+}
+
+// FillEmpty fill the empty field of the struct with default value given
+func FillEmpty(toFill interface{}, defaultVal interface{}) error {
+	ta := reflect.TypeOf(toFill)
+	if ta.Kind() != reflect.Ptr {
+		return NeedPassInPointer
+	}
+	tb := reflect.TypeOf(defaultVal)
+	va := reflect.ValueOf(toFill)
+	vb := reflect.ValueOf(defaultVal)
+	for ta.Kind() == reflect.Ptr {
+		ta = ta.Elem()
+		va = va.Elem()
+	}
+	for tb.Kind() == reflect.Ptr {
+		tb = tb.Elem()
+		vb = vb.Elem()
+	}
+	if ta != tb {
+		return NotSameTypeErr
+	}
+	for i := 0; i < va.NumField(); i++ {
+		v := va.Field(i)
+		if v.Type().Name() == "bool" {
+			continue
+		}
+		if v.IsZero() {
+			v.Set(vb.Field(i))
+		}
+	}
+	return nil
+}
+
+// IsOpenWrt return true only if the operating system SHOULD be openwrt
+func IsOpenWrt() bool {
+	if runtime.GOOS == "linux" {
+		if _, err := os.Stat("/etc/openwrt_release"); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func SliceSub(slice []string, toSub []string) []string {
+	var res = make([]string, 0, len(slice))
+	var m = make(map[string]struct{})
+	for _, s := range toSub {
+		m[s] = struct{}{}
+	}
+	for _, s := range slice {
+		if _, ok := m[s]; !ok {
+			res = append(res, s)
+		}
+	}
+	return res
+}
+
+func SliceHas(slice []string, set []string) []string {
+	var res = make([]string, 0, len(slice))
+	var m = make(map[string]struct{})
+	for _, s := range set {
+		m[s] = struct{}{}
+	}
+	for _, s := range slice {
+		if _, ok := m[s]; ok {
+			res = append(res, s)
+		}
+	}
+	return res
+}
+
+func SliceToSet(slice []string) map[string]struct{} {
+	var m = make(map[string]struct{})
+	for _, s := range slice {
+		m[s] = struct{}{}
+	}
+	return m
 }

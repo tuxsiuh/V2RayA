@@ -3,106 +3,94 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/gookit/color"
 	jsoniter "github.com/json-iterator/go"
 	jsonIteratorExtra "github.com/json-iterator/go/extra"
 	"github.com/tidwall/gjson"
 	"github.com/v2rayA/v2rayA/common/netTools/ports"
-	"github.com/v2rayA/v2rayA/core/iptables"
+	"github.com/v2rayA/v2rayA/common/resolv"
+	"github.com/v2rayA/v2rayA/conf"
+	"github.com/v2rayA/v2rayA/core/serverObj"
 	"github.com/v2rayA/v2rayA/core/v2ray"
 	"github.com/v2rayA/v2rayA/core/v2ray/asset"
 	"github.com/v2rayA/v2rayA/core/v2ray/asset/gfwlist"
+	service2 "github.com/v2rayA/v2rayA/core/v2ray/service"
 	"github.com/v2rayA/v2rayA/core/v2ray/where"
 	"github.com/v2rayA/v2rayA/db"
 	"github.com/v2rayA/v2rayA/db/configure"
-	"github.com/v2rayA/v2rayA/extra/gopeed"
-	"github.com/v2rayA/v2rayA/global"
+	"github.com/v2rayA/v2rayA/pkg/util/gopeed"
+	"github.com/v2rayA/v2rayA/pkg/util/log"
 	"github.com/v2rayA/v2rayA/server/router"
 	"github.com/v2rayA/v2rayA/server/service"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path"
-	"regexp"
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 )
 
 func checkEnvironment() {
-	if runtime.GOOS == "windows" {
-		fmt.Println("v2rayA cannot run on windows")
-		fmt.Println("Press any key to continue...")
-		_, _ = fmt.Scanf("\n")
-		os.Exit(1)
+	config := conf.GetEnvironmentConfig()
+	if len(config.PrintReport) > 0 {
+		config.Report()
+		os.Exit(0)
 	}
-	conf := global.GetEnvironmentConfig()
-	if !conf.PassCheckRoot || conf.ResetPassword {
+	if !config.PassCheckRoot || config.ResetPassword {
 		if os.Getegid() != 0 {
-			log.Fatal("Please execute this program with sudo or as a root user. If you are sure that you have root privileges, you can use the --passcheckroot parameter to skip the check")
+			log.Fatal("Please execute this program with sudo or as a root user for the best experience.\n" +
+				"If you are sure you are root user, use the --passcheckroot parameter to skip the check.\n" +
+				"If you don't want to run as root or you are a non-linux user, use --lite please.\n" +
+				"For example:\n" +
+				"$ v2raya --lite",
+			)
 		}
 	}
-	if conf.ResetPassword {
+	if config.ResetPassword {
 		err := configure.ResetAccounts()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("checkEnvironment: %v", err)
 		}
 		fmt.Println("It will work after you restart v2rayA")
 		os.Exit(0)
 	}
-	_, port, err := net.SplitHostPort(conf.Address)
+	_, v2rayAListeningPort, err := net.SplitHostPort(config.Address)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("checkEnvironment: %v", err)
 	}
-	if occupied, socket, err := ports.IsPortOccupied([]string{port + ":tcp"}); occupied {
+	if occupied, sockets, err := ports.IsPortOccupied([]string{v2rayAListeningPort + ":tcp"}); occupied {
 		if err != nil {
 			log.Fatal("netstat:", err)
 		}
-		process, err := socket.Process()
-		if err == nil {
-			log.Fatalf("Port %v is occupied by %v/%v", port, process.Name, process.PID)
+		for _, socket := range sockets {
+			process, err := socket.Process()
+			if err == nil {
+				log.Fatal("Port %v is occupied by %v/%v", v2rayAListeningPort, process.Name, process.PID)
+			}
 		}
 	}
 }
 
 func checkTProxySupportability() {
+	if conf.GetEnvironmentConfig().Lite {
+		return
+	}
 	//检查tproxy是否可以启用
-	if err := v2ray.CheckAndProbeTProxy(); err != nil {
-		log.Println("[INFO] Cannot load TPROXY module:", err, ". Switch to DNSPoison module")
+	if err := service2.CheckAndProbeTProxy(); err != nil {
+		log.Info("Cannot load TPROXY module: %v", err)
 	}
-	v2ray.CheckAndStopTransparentProxy()
-	preprocess := func(c *iptables.SetupCommands) {
-		commands := string(*c)
-		lines := strings.Split(commands, "\n")
-		reg := regexp.MustCompile(`{{.+}}`)
-		for i, line := range lines {
-			if len(reg.FindString(line)) > 0 {
-				lines[i] = ""
-			}
-		}
-		commands = strings.Join(lines, "\n")
-		*c = iptables.SetupCommands(commands)
-	}
-	err := iptables.Tproxy.GetSetupCommands().Setup(&preprocess)
-	if err != nil {
-		log.Println(err)
-		global.SupportTproxy = false
-	}
-	iptables.Tproxy.GetCleanCommands().Clean()
 }
 
 func migrate(jsonConfPath string) (err error) {
-	log.Println("[info] Migrating json to nutsdb...")
+	log.Info("Migrating json to nutsdb...")
 	defer func() {
 		if err != nil {
-			log.Println("[info] Migrating failed: ", err.Error())
+			log.Warn("Migrating failed: %v", err)
 		} else {
-			log.Println("[info] Migrating complete")
+			log.Info("Migrating complete")
 		}
 	}()
 	b, err := os.ReadFile(jsonConfPath)
@@ -120,44 +108,120 @@ func migrate(jsonConfPath string) (err error) {
 }
 
 func initDBValue() {
+	log.Info("init DB")
 	err := configure.SetConfigure(configure.New())
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("initDBValue: %v", err)
+	}
+}
+
+func migrateServerFormat() {
+	serverRaw := configure.GetServers()
+	var serverRawV2 []*configure.ServerRawV2
+	for _, raw := range serverRaw {
+		if raw.VmessInfo.Protocol == "" {
+			raw.VmessInfo.Protocol = "vmess"
+		}
+		obj, err := serverObj.NewFromLink(raw.VmessInfo.Protocol, raw.VmessInfo.ExportToURL())
+		if err != nil {
+			log.Warn("failed to migrate: %v", raw.VmessInfo.Ps)
+			continue
+		}
+		serverRawV2 = append(serverRawV2, &configure.ServerRawV2{
+			ServerObj: obj,
+			Latency:   raw.Latency,
+		})
+	}
+	if len(serverRawV2) > 0 {
+		err := configure.AppendServers(serverRawV2)
+		if err != nil {
+			log.Warn("failed to migrate: %v", err)
+		}
+	}
+	subscriptionsRaw := configure.GetSubscriptions()
+	var subV2 []*configure.SubscriptionRawV2
+	for _, raw := range subscriptionsRaw {
+		var serversV2 []configure.ServerRawV2
+		for _, sraw := range raw.Servers {
+			if sraw.VmessInfo.Protocol == "" {
+				sraw.VmessInfo.Protocol = "vmess"
+			}
+			obj, err := serverObj.NewFromLink(sraw.VmessInfo.Protocol, sraw.VmessInfo.ExportToURL())
+			if err != nil {
+				log.Warn("failed to migrate: %v", sraw.VmessInfo.Ps)
+				continue
+			}
+			serversV2 = append(serversV2, configure.ServerRawV2{
+				ServerObj: obj,
+				Latency:   sraw.Latency,
+			})
+		}
+		subRawV2 := configure.SubscriptionRawV2{
+			Remarks: raw.Remarks,
+			Address: raw.Address,
+			Status:  raw.Status,
+			Servers: serversV2,
+			Info:    raw.Info,
+		}
+		subV2 = append(subV2, &subRawV2)
+	}
+	if len(subV2) > 0 {
+		err := configure.AppendSubscriptions(subV2)
+		if err != nil {
+			log.Warn("failed to migrate: %v", err)
+		}
 	}
 }
 
 func initConfigure() {
+	//等待网络连通
+	v2ray.CheckAndStopTransparentProxy()
+	for {
+		addrs, err := resolv.LookupHost("apple.com")
+		if err == nil && len(addrs) > 0 {
+			break
+		}
+		log.Alert("waiting for network connected")
+		time.Sleep(5 * time.Second)
+	}
+	log.Alert("network is connected")
 	//初始化配置
 	jsonIteratorExtra.RegisterFuzzyDecoders()
-	// Enable line numbers in logging
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	//db
-	confPath := global.GetEnvironmentConfig().Config
+	confPath := conf.GetEnvironmentConfig().Config
 	if _, err := os.Stat(confPath); os.IsNotExist(err) {
 		_ = os.MkdirAll(path.Dir(confPath), os.ModeDir|0750)
 	}
 	if configure.IsConfigureNotExists() {
 		// need to migrate?
 		camp := []string{path.Join(path.Dir(confPath), "v2raya.json"), "/etc/v2ray/v2raya.json", "/etc/v2raya/v2raya.json"}
-		var ok bool
+		var success bool
 		for _, jsonConfPath := range camp {
 			if _, err := os.Stat(jsonConfPath); err == nil {
+				log.Info("migrate from %v", jsonConfPath)
 				err = migrate(jsonConfPath)
 				if err == nil {
-					ok = true
+					success = true
 					break
 				}
 			}
 		}
-		if !ok {
+		if !success {
 			initDBValue()
+		}
+	} else {
+		// need to migrate server format from v1 to v2?
+		if (len(configure.GetServers())+len(configure.GetSubscriptions())) > 0 &&
+			(len(configure.GetServersV2())+len(configure.GetSubscriptionsV2())) == 0 {
+			log.Info("migrating server format from v1 to v2...")
+			migrateServerFormat()
 		}
 	}
 	//检查config.json是否存在
 	if _, err := os.Stat(asset.GetV2rayConfigPath()); err != nil {
 		//不存在就建一个。多数情况发生于docker模式挂载volume时覆盖了/etc/v2ray
-		t := v2ray.NewTemplate()
+		t := v2ray.Template{}
 		_ = v2ray.WriteV2rayConfig(t.ToConfigBytes())
 	}
 
@@ -166,8 +230,8 @@ func initConfigure() {
 		//检查geoip、geosite是否存在
 		if !asset.IsGeoipExists() || !asset.IsGeositeExists() {
 			dld := func(repo, filename, localname string) (err error) {
-				color.Red.Println("installing " + filename)
-				p := asset.GetV2rayLocationAsset() + "/" + filename
+				log.Warn("installing " + filename)
+				p := path.Join(asset.GetV2rayLocationAsset(), filename)
 				resp, err := http.Get("https://api.github.com/repos/" + repo + "/tags")
 				if err != nil {
 					return
@@ -190,33 +254,38 @@ func initConfigure() {
 				if err != nil {
 					return errors.New("chmod: " + err.Error())
 				}
-				os.Rename(p, asset.GetV2rayLocationAsset()+"/"+localname)
+				os.Rename(p, path.Join(asset.GetV2rayLocationAsset(), localname))
 				return
 			}
 			err := dld("v2rayA/dist-geoip", "geoip.dat", "geoip.dat")
 			if err != nil {
-				log.Println(err)
+				log.Warn("initConfigure: v2rayA/dist-geoip: %v", err)
 			}
 			err = dld("v2rayA/dist-domain-list-community", "dlc.dat", "geosite.dat")
 			if err != nil {
-				log.Println(err)
+				log.Warn("initConfigure: v2rayA/dist-domain-list-community: %v", err)
 			}
 		}
 	}
 }
 
 func hello() {
-	color.Red.Println("V2RayLocationAsset is", asset.GetV2rayLocationAsset())
+	log.Alert("V2RayLocationAsset is %v", asset.GetV2rayLocationAsset())
 	v2rayPath, _ := where.GetV2rayBinPath()
-	color.Red.Println("V2Ray binary is", v2rayPath)
+	log.Alert("V2Ray binary is %v", v2rayPath)
 	wd, _ := os.Getwd()
-	color.Red.Println("v2rayA working directory is", wd)
-	color.Red.Println("Version:", global.Version)
-	color.Red.Println("Starting...")
+	log.Alert("v2rayA working directory is %v", wd)
+	log.Alert("v2rayA configuration directory is %v", conf.GetEnvironmentConfig().Config)
+	log.Alert("Golang: %v", runtime.Version())
+	log.Alert("OS: %v", runtime.GOOS)
+	log.Alert("Arch: %v", runtime.GOARCH)
+	log.Alert("Lite: %v", conf.GetEnvironmentConfig().Lite)
+	log.Alert("Version: %v", conf.Version)
+	log.Alert("Starting...")
 }
 
 func updateSubscriptions() {
-	subs := configure.GetSubscriptions()
+	subs := configure.GetSubscriptionsV2()
 	lenSubs := len(subs)
 	control := make(chan struct{}, 2) //并发限制同时更新2个订阅
 	wg := new(sync.WaitGroup)
@@ -226,9 +295,9 @@ func updateSubscriptions() {
 			control <- struct{}{}
 			err := service.UpdateSubscription(i, false)
 			if err != nil {
-				log.Println(fmt.Sprintf("[AutoUpdate] Subscriptions: Failed to update subscription -- ID: %d，err: %v", i, err.Error()))
+				log.Info("[AutoUpdate] Subscriptions: Failed to update subscription -- ID: %d，err: %v", i, err)
 			} else {
-				log.Println(fmt.Sprintf("[AutoUpdate] Subscriptions: Complete updating subscription -- ID: %d，Address: %s", i, subs[i].Address))
+				log.Info("[AutoUpdate] Subscriptions: Complete updating subscription -- ID: %d，Address: %s", i, subs[i].Address)
 			}
 			wg.Done()
 			<-control
@@ -238,18 +307,18 @@ func updateSubscriptions() {
 }
 
 func initUpdatingTicker() {
-	global.TickerUpdateGFWList = time.NewTicker(24 * time.Hour * 365 * 100)
-	global.TickerUpdateSubscription = time.NewTicker(24 * time.Hour * 365 * 100)
+	conf.TickerUpdateGFWList = time.NewTicker(24 * time.Hour * 365 * 100)
+	conf.TickerUpdateSubscription = time.NewTicker(24 * time.Hour * 365 * 100)
 	go func() {
-		for range global.TickerUpdateGFWList.C {
+		for range conf.TickerUpdateGFWList.C {
 			_, err := gfwlist.CheckAndUpdateGFWList()
 			if err != nil {
-				log.Println("[AutoUpdate] GFWList:", err)
+				log.Info("[AutoUpdate] GFWList: %v", err)
 			}
 		}
 	}()
 	go func() {
-		for range global.TickerUpdateSubscription.C {
+		for range conf.TickerUpdateSubscription.C {
 			updateSubscriptions()
 		}
 	}()
@@ -257,17 +326,6 @@ func initUpdatingTicker() {
 
 func checkUpdate() {
 	setting := service.GetSetting()
-	//等待网络连通
-	for {
-		c := http.DefaultClient
-		c.Timeout = 5 * time.Second
-		resp, err := http.Get("http://www.gstatic.com/generate_204")
-		if err == nil {
-			_ = resp.Body.Close()
-			break
-		}
-		time.Sleep(c.Timeout)
-	}
 
 	//初始化ticker
 	initUpdatingTicker()
@@ -277,21 +335,21 @@ func checkUpdate() {
 		setting.GFWListAutoUpdateMode == configure.AutoUpdateAtIntervals ||
 		setting.Transparent == configure.TransparentGfwlist {
 		if setting.GFWListAutoUpdateMode == configure.AutoUpdateAtIntervals {
-			global.TickerUpdateGFWList.Reset(time.Duration(setting.GFWListAutoUpdateIntervalHour) * time.Hour)
+			conf.TickerUpdateGFWList.Reset(time.Duration(setting.GFWListAutoUpdateIntervalHour) * time.Hour)
 		}
-		switch setting.PacMode {
+		switch setting.RulePortMode {
 		case configure.GfwlistMode:
 			go func() {
 				/* 更新LoyalsoldierSite.dat */
 				localGFWListVersion, err := gfwlist.CheckAndUpdateGFWList()
 				if err != nil {
-					log.Println("Failed to update PAC file: " + err.Error())
+					log.Warn("Failed to update PAC file: %v", err.Error())
 					return
 				}
-				log.Println("Complete updating PAC file. Localtime: " + localGFWListVersion)
+				log.Info("Complete updating PAC file. Localtime: %v", localGFWListVersion)
 			}()
 		case configure.CustomMode:
-			//TODO
+			// obsolete
 		}
 	}
 
@@ -300,7 +358,7 @@ func checkUpdate() {
 		setting.SubscriptionAutoUpdateMode == configure.AutoUpdateAtIntervals {
 
 		if setting.SubscriptionAutoUpdateMode == configure.AutoUpdateAtIntervals {
-			global.TickerUpdateSubscription.Reset(time.Duration(setting.SubscriptionAutoUpdateIntervalHour) * time.Hour)
+			conf.TickerUpdateSubscription.Reset(time.Duration(setting.SubscriptionAutoUpdateIntervalHour) * time.Hour)
 		}
 		go updateSubscriptions()
 	}
@@ -308,8 +366,8 @@ func checkUpdate() {
 	go func() {
 		f := func() {
 			if foundNew, remote, err := service.CheckUpdate(); err == nil {
-				global.FoundNew = foundNew
-				global.RemoteVersion = remote
+				conf.FoundNew = foundNew
+				conf.RemoteVersion = remote
 			}
 		}
 		f()
@@ -322,10 +380,13 @@ func checkUpdate() {
 
 func run() (err error) {
 	//判别需要启动v2ray吗
-	if w := configure.GetConnectedServer(); w != nil {
-		_ = service.Connect(w)
+	if configure.GetRunning() {
+		err := v2ray.UpdateV2RayConfig()
+		if err != nil {
+			log.Error("failed to start v2ray-core: %v", err)
+		}
 	}
-	//w := configure.GetConnectedServer()
+	//w := configure.GetConnectedServers()
 	//log.Println(err, ", which:", w)
 	//_ = configure.ClearConnected()
 	errch := make(chan error)
@@ -341,11 +402,11 @@ func run() (err error) {
 		errch <- nil
 	}()
 	if err = <-errch; err != nil {
-		log.Fatal(err)
+		log.Fatal("run: %v", err)
 	}
 	fmt.Println("Quitting...")
 	v2ray.CheckAndStopTransparentProxy()
-	_ = v2ray.StopV2rayService()
+	v2ray.ProcessManager.Stop(false)
 	_ = db.DB().Close()
 	return nil
 }

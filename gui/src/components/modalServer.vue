@@ -5,7 +5,7 @@
         {{ $tc("configureServer.title", readonly ? 2 : 1) }}
       </p>
     </header>
-    <section :class="{ 'modal-card-body': true, readonly: readonly }">
+    <section ref="section" :class="{ 'modal-card-body': true }">
       <b-tabs
         v-model="tabChoice"
         position="is-centered"
@@ -35,7 +35,7 @@
               expanded
             />
           </b-field>
-          <b-field label="Address" label-position="on-border">
+          <b-field label="Host" label-position="on-border">
             <b-input
               ref="v2ray_add"
               v-model="v2ray.add"
@@ -108,11 +108,25 @@
             >
             </b-autocomplete>
           </b-field>
-          <b-field
-            v-show="v2ray.tls === 'tls'"
-            label="AllowInsecure"
-            label-position="on-border"
-          >
+          <b-field v-show="v2ray.tls !== 'none'" label-position="on-border">
+            <template slot="label">
+              AllowInsecure
+              <b-tooltip
+                v-show="v2ray.protocol === 'vless'"
+                type="is-dark"
+                :label="
+                  $t('server.messages.notAllowInsecure', { name: 'VLESS' })
+                "
+                multilined
+                position="is-right"
+              >
+                <b-icon
+                  size="is-small"
+                  icon=" iconfont icon-help-circle-outline"
+                  style="position:relative;top:2px;right:3px;font-weight:normal"
+                />
+              </b-tooltip>
+            </template>
             <b-select
               ref="v2ray_allow_insecure"
               v-model="v2ray.allowInsecure"
@@ -120,7 +134,9 @@
               required
             >
               <option :value="false">{{ $t("operations.no") }}</option>
-              <option :value="true">{{ $t("operations.yes") }}</option>
+              <option :value="true" :disabled="v2ray.protocol === 'vless'">{{
+                $t("operations.yes")
+              }}</option>
             </b-select>
           </b-field>
           <b-field label="Network" label-position="on-border">
@@ -135,6 +151,7 @@
               <option value="kcp">mKCP</option>
               <option value="ws">WebSocket</option>
               <option value="h2">HTTP/2</option>
+              <option value="grpc">gRPC</option>
             </b-select>
           </b-field>
           <b-field
@@ -199,6 +216,13 @@
             />
           </b-field>
           <b-field
+            v-show="v2ray.tls === 'tls' || v2ray.tls === 'xtls'"
+            label="Alpn"
+            label-position="on-border"
+          >
+            <b-input v-model="v2ray.alpn" placeholder="h2,http/1.1" expanded />
+          </b-field>
+          <b-field
             v-show="
               v2ray.net === 'ws' ||
                 v2ray.net === 'h2' ||
@@ -224,6 +248,19 @@
               expanded
             />
           </b-field>
+          <b-field
+            v-show="v2ray.net === 'grpc'"
+            label="ServiceName"
+            label-position="on-border"
+          >
+            <b-input
+              ref="v2ray_service_name"
+              v-model="v2ray.path"
+              type="text"
+              expanded
+              required
+            />
+          </b-field>
         </b-tab-item>
         <b-tab-item label="SS">
           <b-field label="Name" label-position="on-border">
@@ -234,7 +271,7 @@
               expanded
             />
           </b-field>
-          <b-field label="Address" label-position="on-border">
+          <b-field label="Host" label-position="on-border">
             <b-input
               ref="ss_server"
               v-model="ss.server"
@@ -274,22 +311,48 @@
               <option value="none">none</option>
             </b-select>
           </b-field>
-          <b-field label="Obfs" label-position="on-border">
-            <b-select ref="ss_obfs" v-model="ss.obfs" expanded>
+          <b-field label="Plugin" label-position="on-border">
+            <b-select ref="ss_plugin" v-model="ss.plugin" expanded>
               <option value="">{{ $t("setting.options.off") }}</option>
+              <option value="simple-obfs">simple-obfs</option>
+              <option value="v2ray-plugin">v2ray-plugin</option>
+            </b-select>
+          </b-field>
+          <b-field
+            v-show="ss.plugin === 'simple-obfs'"
+            label="Obfs"
+            label-position="on-border"
+          >
+            <b-select ref="ss_obfs" v-model="ss.obfs" expanded>
               <option value="http">http</option>
               <option value="tls">tls</option>
             </b-select>
           </b-field>
           <b-field
-            v-if="ss.obfs === 'http'"
-            label="Path"
+            v-show="ss.plugin === 'v2ray-plugin'"
+            label="Mode"
             label-position="on-border"
           >
-            <b-input ref="ss_path" v-model="ss.path" expanded />
+            <b-select ref="ss_mode" value="websocket" expanded>
+              <option value="websocket">websocket</option>
+            </b-select>
           </b-field>
           <b-field
-            v-if="ss.obfs === 'http' || ss.obfs === 'tls'"
+            v-show="ss.plugin === 'v2ray-plugin'"
+            label="TLS"
+            label-position="on-border"
+          >
+            <b-select ref="ss_tls" v-model="ss.tls" expanded>
+              <option value="">{{ $t("setting.options.off") }}</option>
+              <option value="tls">tls</option>
+            </b-select>
+          </b-field>
+          <b-field
+            v-if="
+              ss.obfs === 'http' ||
+                ss.obfs === 'tls' ||
+                ss.plugin === 'v2ray-plugin'
+            "
             label="Host"
             label-position="on-border"
           >
@@ -299,6 +362,13 @@
               placeholder="(optional)"
               expanded
             />
+          </b-field>
+          <b-field
+            v-if="ss.obfs === 'http' || ss.plugin === 'v2ray-plugin'"
+            label="Path"
+            label-position="on-border"
+          >
+            <b-input ref="ss_path" v-model="ss.path" placeholder="/" expanded />
           </b-field>
         </b-tab-item>
         <b-tab-item label="SSR">
@@ -310,7 +380,7 @@
               expanded
             />
           </b-field>
-          <b-field label="Address" label-position="on-border">
+          <b-field label="Host" label-position="on-border">
             <b-input
               ref="ssr_server"
               v-model="ssr.server"
@@ -419,7 +489,7 @@
               expanded
             />
           </b-field>
-          <b-field label="Address" label-position="on-border">
+          <b-field label="Host" label-position="on-border">
             <b-input
               ref="pingtunnel_server"
               v-model="pingtunnel.server"
@@ -448,7 +518,7 @@
               expanded
             />
           </b-field>
-          <b-field label="Address" label-position="on-border">
+          <b-field label="Host" label-position="on-border">
             <b-input
               ref="trojan_server"
               v-model="trojan.server"
@@ -519,11 +589,25 @@
               expanded
             />
           </b-field>
-          <b-field
-            v-show="trojan.method === 'origin' && trojan.obfs === 'none'"
-            label="AllowInsecure"
-            label-position="on-border"
-          >
+          <b-field label-position="on-border">
+            <template slot="label">
+              AllowInsecure
+              <b-tooltip
+                v-show="trojan.method !== 'origin' || trojan.obfs !== 'none'"
+                type="is-dark"
+                :label="
+                  $t('server.messages.notAllowInsecure', { name: 'Trojan-Go' })
+                "
+                multilined
+                position="is-right"
+              >
+                <b-icon
+                  size="is-small"
+                  icon=" iconfont icon-help-circle-outline"
+                  style="position:relative;top:2px;right:3px;font-weight:normal"
+                />
+              </b-tooltip>
+            </template>
             <b-select
               ref="trojan_allow_insecure"
               v-model="trojan.allowInsecure"
@@ -531,7 +615,11 @@
               required
             >
               <option :value="false">{{ $t("operations.no") }}</option>
-              <option :value="true">{{ $t("operations.yes") }}</option>
+              <option
+                :value="true"
+                :disabled="trojan.method !== 'origin' || trojan.obfs !== 'none'"
+                >{{ $t("operations.yes") }}</option
+              >
             </b-select>
           </b-field>
           <b-field label="SNI(Peer)" label-position="on-border">
@@ -558,6 +646,58 @@
             label-position="on-border"
           >
             <b-input v-model="trojan.path" placeholder="/" expanded />
+          </b-field>
+        </b-tab-item>
+
+        <b-tab-item label="HTTP">
+          <b-field label="Protocol" label-position="on-border">
+            <b-select v-model="http.protocol" expanded>
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+            </b-select>
+          </b-field>
+          <b-field label="Name" label-position="on-border">
+            <b-input
+              ref="http_name"
+              v-model="http.name"
+              :placeholder="$t('configureServer.servername')"
+              expanded
+            />
+          </b-field>
+          <b-field label="Host" label-position="on-border">
+            <b-input
+              ref="http_host"
+              v-model="http.host"
+              required
+              placeholder="IP / HOST"
+              expanded
+            />
+          </b-field>
+          <b-field label="Port" label-position="on-border">
+            <b-input
+              ref="http_port"
+              v-model="http.port"
+              required
+              :placeholder="$t('configureServer.port')"
+              type="number"
+              expanded
+            />
+          </b-field>
+          <b-field label="Username" label-position="on-border">
+            <b-input
+              ref="http_username"
+              v-model="http.username"
+              :placeholder="$t('configureServer.username')"
+              expanded
+            />
+          </b-field>
+          <b-field label="Password" label-position="on-border">
+            <b-input
+              ref="http_password"
+              v-model="http.password"
+              :placeholder="$t('configureServer.password')"
+              expanded
+            />
           </b-field>
         </b-tab-item>
       </b-tabs>
@@ -607,13 +747,16 @@ export default {
       path: "",
       tls: "none",
       flow: "xtls-rprx-direct",
+      alpn: "",
       v: "",
       allowInsecure: false,
       protocol: "vmess"
     },
     ss: {
       method: "aes-128-gcm",
-      obfs: "",
+      plugin: "",
+      obfs: "http",
+      tls: "",
       path: "/",
       host: "",
       password: "",
@@ -654,6 +797,14 @@ export default {
       ssPassword: "",
       obfs: "none" /* websocket */,
       protocol: "trojan"
+    },
+    http: {
+      username: "",
+      password: "",
+      host: "",
+      port: "",
+      protocol: "http",
+      name: ""
     },
     tabChoice: 0,
     presetFlows: [
@@ -727,7 +878,26 @@ export default {
           ) {
             this.trojan = this.resolveURL(res.data.data.sharingAddress);
             this.tabChoice = 4;
+          } else if (
+            res.data.data.sharingAddress.toLowerCase().startsWith("http://") ||
+            res.data.data.sharingAddress.toLowerCase().startsWith("https://")
+          ) {
+            this.http = this.resolveURL(res.data.data.sharingAddress);
+            this.tabChoice = 5;
           }
+          this.$nextTick(() => {
+            if (this.readonly) {
+              this.$refs.section
+                .querySelectorAll("input, textarea")
+                .forEach(x => (x.readOnly = "readOnly"));
+              this.$refs.section.querySelectorAll("select").forEach(x => {
+                const text = x.querySelector(`option[value="${x.value}"]`)
+                  .textContent;
+                console.log(x.value, text);
+                x.outerHTML = `<input type="text" class="input" readonly="readonly" value="${text}">`;
+              });
+            }
+          });
         });
       });
     }
@@ -757,28 +927,42 @@ export default {
           ps: decodeURIComponent(u.hash),
           add: u.host,
           port: u.port,
-          id: u.username,
+          id: decodeURIComponent(u.username),
           net: u.params.type || "tcp",
           type: u.params.headerType || "none",
           host: u.params.sni || u.params.host || "",
-          path: u.params.path || "",
+          path: u.params.path || u.params.serviceName || "",
+          alpn: u.params.alpn || "",
           tls: u.params.security || "none",
           flow: u.params.flow || "xtls-rprx-direct",
           allowInsecure: false,
           protocol: "vless"
         };
-        if (o.type === "mkcp" || o.type === "kcp") {
+        if (o.alpn !== "") {
+          o.alpn = decodeURIComponent(o.alpn);
+        }
+        if (o.net === "mkcp" || o.net === "kcp") {
           o.path = u.params.seed;
         }
+        console.log(o);
         return o;
       } else if (url.toLowerCase().startsWith("ss://")) {
         let u = parseURL(url);
-        try {
-          u.username = Base64.decode(decodeURIComponent(u.username));
-        } catch (e) {
-          //pass
+        let mp;
+        if (!u.password) {
+          try {
+            u.username = Base64.decode(decodeURIComponent(u.username));
+            mp = u.username.split(":");
+            if (mp.length > 2) {
+              mp[1] = mp.slice(1).join(":");
+              mp = mp.slice(0, 2);
+            }
+          } catch (e) {
+            //pass
+          }
+        } else {
+          mp = [u.username, u.password];
         }
-        let mp = u.username.split(":");
         u.hash = decodeURIComponent(u.hash);
         let obj = {
           method: mp[0],
@@ -786,11 +970,23 @@ export default {
           server: u.host,
           port: u.port,
           name: u.hash,
+          obfs: "http",
+          plugin: "",
           protocol: "ss"
         };
         if (u.params.plugin) {
           u.params.plugin = decodeURIComponent(u.params.plugin);
           const arr = u.params.plugin.split(";");
+          obj.plugin = arr[0];
+          switch (obj.plugin) {
+            case "obfs-local":
+            case "simpleobfs":
+              obj.plugin = "simple-obfs";
+              break;
+            case "v2ray-plugin":
+              obj.tls = "";
+              break;
+          }
           for (let i = 1; i < arr.length; i++) {
             //"obfs-local;obfs=tls;obfs-host=4cb6a43103.wns.windows.com"
             const a = arr[i].split("=");
@@ -805,8 +1001,6 @@ export default {
                 obj.path = a[1];
             }
           }
-        } else {
-          obj.obfs = "";
         }
         return obj;
       } else if (url.toLowerCase().startsWith("ssr://")) {
@@ -851,15 +1045,9 @@ export default {
         };
       } else if (url.toLowerCase().startsWith("ping-tunnel://")) {
         let u = parseURL(url);
-        console.log({
-          server: u.host,
-          password: u.username,
-          name: decodeURIComponent(u.hash),
-          protocol: "pingtunnel"
-        });
         return {
           server: u.host,
-          password: u.username,
+          password: decodeURIComponent(u.username),
           name: decodeURIComponent(u.hash),
           protocol: "pingtunnel"
         };
@@ -869,7 +1057,7 @@ export default {
       ) {
         let u = parseURL(url);
         const o = {
-          password: u.username,
+          password: decodeURIComponent(u.username),
           server: u.host,
           port: u.port,
           name: decodeURIComponent(u.hash),
@@ -881,7 +1069,7 @@ export default {
           ssCipher: "aes-128-gcm",
           protocol: "trojan"
         };
-        if (url.toLowerCase().indexOf("trojan-go://") === 0) {
+        if (url.toLowerCase().startsWith("" + "")) {
           console.log(u.params.encryption);
           if (u.params.encryption?.startsWith("ss;")) {
             o.method = "shadowsocks";
@@ -894,14 +1082,29 @@ export default {
             "": "none",
             ws: "websocket"
           };
-          o.obfs = obfsMap[u.params.type];
+          o.obfs = obfsMap[u.params.type || ""];
           if (o.obfs === "ws") {
             o.obfs = "websocket";
           }
-          o.host = u.params.host;
-          o.path = u.params.path;
+          if (o.obfs === "websocket") {
+            o.host = u.params.host || "";
+            o.path = u.params.path || "/";
+          }
         }
         return o;
+      } else if (
+        url.toLowerCase().startsWith("http://") ||
+        url.toLowerCase().startsWith("https://")
+      ) {
+        let u = parseURL(url);
+        return {
+          username: decodeURIComponent(u.username),
+          password: decodeURIComponent(u.password),
+          host: u.host,
+          port: u.port,
+          protocol: u.protocol,
+          name: decodeURIComponent(u.hash)
+        };
       }
       return null;
     },
@@ -911,6 +1114,7 @@ export default {
       let tmp;
       switch (srcObj.protocol) {
         case "vless":
+          // https://github.com/XTLS/Xray-core/discussions/716
           query = {
             type: srcObj.net,
             security: srcObj.tls,
@@ -920,6 +1124,12 @@ export default {
             sni: srcObj.host,
             flow: srcObj.flow
           };
+          if (srcObj.alpn !== "") {
+            query.alpn = srcObj.alpn;
+          }
+          if (srcObj.net === "grpc") {
+            query.serviceName = srcObj.path;
+          }
           if (srcObj.net === "mkcp" || srcObj.net === "kcp") {
             query.seed = srcObj.path;
           }
@@ -932,20 +1142,27 @@ export default {
             params: query
           });
         case "vmess":
-          //尽量减少生成的链接长度
+          //https://github.com/2dust/v2rayN/wiki/%E5%88%86%E4%BA%AB%E9%93%BE%E6%8E%A5%E6%A0%BC%E5%BC%8F%E8%AF%B4%E6%98%8E(ver-2)
           obj = Object.assign({}, srcObj);
           switch (obj.net) {
             case "kcp":
             case "tcp":
-              if (!(obj.net === "tcp" && obj.type === "http")) {
-                obj.path = "";
-                if (obj.tls === "" || obj.tls === "none") {
-                  obj.host = "";
-                }
-              }
+            case "quic":
               break;
             default:
               obj.type = "";
+          }
+          switch (obj.net) {
+            case "ws":
+            case "h2":
+            case "http":
+            case "quic":
+            case "grpc":
+            case "kcp":
+            case "mkcp":
+              break;
+            default:
+              obj.path = "";
           }
           if (!(obj.protocol === "vless" && obj.tls === "xtls")) {
             delete obj.flow;
@@ -953,16 +1170,35 @@ export default {
           return "vmess://" + Base64.encode(JSON.stringify(obj));
         case "ss":
           /* ss://BASE64(method:password)@server:port#name */
-          //TODO: simpleobfs
           tmp = `ss://${Base64.encode(`${srcObj.method}:${srcObj.password}`)}@${
             srcObj.server
           }:${srcObj.port}/`;
-          if (srcObj.obfs !== "") {
-            tmp += `?plugin=${encodeURIComponent(
-              `obfs-local;obfs=${srcObj.obfs};obfs-host=${srcObj.host}${
-                srcObj.obfs === "http" ? `;obfs-path=${srcObj.path}` : ""
-              }`
-            )}`;
+          if (srcObj.plugin) {
+            const plugin = [srcObj.plugin];
+            if (srcObj.plugin === "v2ray-plugin") {
+              if (srcObj.tls) {
+                plugin.push("tls");
+              }
+              if (srcObj.mode !== "websocket") {
+                plugin.push("mode=" + srcObj.mode);
+              }
+              if (srcObj.host) {
+                plugin.push("host=" + srcObj.host);
+              }
+              if (srcObj.path) {
+                if (!srcObj.path.startsWith("/")) {
+                  srcObj.path = "/" + srcObj.path;
+                }
+                plugin.push("path=" + srcObj.path);
+              }
+            } else {
+              plugin.push("obfs=" + srcObj.obfs);
+              plugin.push("obfs-host=" + srcObj.host);
+              if (srcObj.obfs === "http") {
+                plugin.push("obfs-path=" + srcObj.path);
+              }
+            }
+            tmp += `?plugin=${encodeURIComponent(plugin.join(";"))}`;
           }
           tmp += srcObj.name.length
             ? `#${encodeURIComponent(srcObj.name)}`
@@ -1002,8 +1238,10 @@ export default {
             if (srcObj.method === "shadowsocks") {
               query.encryption = `ss;${srcObj.ssCipher};${srcObj.ssPassword}`;
             }
-            query.host = srcObj.host;
-            query.path = srcObj.path;
+            if (query.type === "ws") {
+              query.host = srcObj.host || "";
+              query.path = srcObj.path || "/";
+            }
             delete query.allowInsecure;
           }
           return generateURL({
@@ -1014,6 +1252,21 @@ export default {
             hash: srcObj.name,
             params: query
           });
+        case "http":
+        case "https":
+          tmp = {
+            protocol: srcObj.protocol + "-proxy",
+            host: srcObj.host,
+            port: srcObj.port,
+            hash: srcObj.name
+          };
+          if (srcObj.username && srcObj.password) {
+            Object.assign(tmp, {
+              username: srcObj.username,
+              password: srcObj.password
+            });
+          }
+          return generateURL(tmp);
       }
       return null;
     },
@@ -1032,6 +1285,17 @@ export default {
         });
       } else if (this.v2ray.tls === "xtls" && !this.v2ray.flow) {
         this.v2ray.flow = this.presetFlows[0];
+      } else if (this.v2ray.tls === "none" && this.v2ray.net === "grpc") {
+        this.$buefy.toast.open({
+          message: this.$t("setting.messages.grpcShouldWithTls"),
+          type: "is-warning",
+          position: "is-top",
+          queue: false,
+          duration: 5000
+        });
+        this.$nextTick(() => {
+          this.v2ray.tls = "tls";
+        });
       }
     },
     handleClickSubmit() {
@@ -1055,11 +1319,15 @@ export default {
         if (this.tabChoice === 4 && !k.startsWith("trojan_")) {
           continue;
         }
+        if (this.tabChoice === 5 && !k.startsWith("http_")) {
+          continue;
+        }
         let x = this.$refs[k];
         if (!x) {
           continue;
         }
         if (
+          x.$el.offsetParent && // is visible
           x.hasOwnProperty("checkHtml5Validity") &&
           typeof x.checkHtml5Validity === "function" &&
           !x.checkHtml5Validity()
@@ -1082,6 +1350,8 @@ export default {
         coded = this.generateURL(this.pingtunnel);
       } else if (this.tabChoice === 4) {
         coded = this.generateURL(this.trojan);
+      } else if (this.tabChoice === 5) {
+        coded = this.generateURL(this.http);
       }
       this.$emit("submit", coded);
     }
